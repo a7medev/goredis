@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -14,9 +16,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	_, err = ln.Accept()
+	conn, err := ln.Accept()
 	if err != nil {
 		fmt.Println("Error accepting connection: ", err.Error())
+		os.Exit(1)
+	}
+
+	defer conn.Close()
+
+	if _, err := io.Copy(conn, strings.NewReader("+PONG\r\n")); err != nil {
+		fmt.Println("Error sending PONG to the request", err.Error())
 		os.Exit(1)
 	}
 }
