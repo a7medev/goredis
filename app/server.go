@@ -3,24 +3,24 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"net"
-	"os"
 	"strings"
+
+	"github.com/a7medev/goredis/app/resp"
 )
 
 func main() {
 	ln, err := net.Listen("tcp", "0.0.0.0:6379")
 
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379")
-		os.Exit(1)
+		log.Fatalln("Failed to bind to port 6379")
 	}
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
-			os.Exit(1)
+			log.Fatalln("Error accepting connection: ", err.Error())
 		}
 
 		go handleConn(conn)
@@ -32,7 +32,7 @@ func handleConn(conn net.Conn) {
 
 	buf := make([]byte, 4096)
 	for {
-		_, err := conn.Read(buf)
+		n, err := conn.Read(buf)
 
 		if err == io.EOF {
 			fmt.Println("Bye!")
@@ -40,13 +40,45 @@ func handleConn(conn net.Conn) {
 		}
 
 		if err != nil {
-			fmt.Println("Error reading data from connection: ", err.Error())
-			os.Exit(1)
+			log.Fatalln("Error reading data from connection:", err.Error())
 		}
 
-		if _, err := io.Copy(conn, strings.NewReader("+PONG\r\n")); err != nil {
-			fmt.Println("Error sending PONG to the request", err.Error())
-			os.Exit(1)
+		p := resp.NewParser(buf, n)
+
+		p.NextType()
+		p.NextInteger()
+
+		if err != nil {
+			log.Fatalln("Error parsing command:", err.Error())
+		}
+
+		p.NextType()
+		cmd, err := p.NextBulkString()
+
+		if err != nil {
+			log.Fatalln("Error parsing command:", err.Error())
+		}
+
+		cmd = strings.ToUpper(cmd)
+
+		switch cmd {
+		case "PING":
+			if _, err := io.Copy(conn, strings.NewReader("+PONG\r\n")); err != nil {
+				log.Fatalln("Error sending PONG to the request", err.Error())
+			}
+		case "ECHO":
+			p.NextType()
+			msg, err := p.NextBulkString()
+
+			if err != nil {
+				log.Fatalln("Error parsing command: ", err.Error())
+			}
+
+			if _, err := io.Copy(conn, strings.NewReader(fmt.Sprintf("$%v\r\n%v\r\n", len(msg), msg))); err != nil {
+				log.Fatalln("Error sending ECHO to the request", err.Error())
+			}
+		default:
+			fmt.Println("Unknown command", cmd)
 		}
 	}
 }
