@@ -6,25 +6,6 @@ import (
 	"strconv"
 )
 
-type DataType int32
-
-const (
-	SimpleString   DataType = 0
-	SimpleError    DataType = 1
-	Integer        DataType = 2
-	BulkString     DataType = 3
-	Array          DataType = 4
-	Null           DataType = 5
-	Boolean        DataType = 6
-	Double         DataType = 7
-	BigNumber      DataType = 8
-	BulkError      DataType = 9
-	VerbatimString DataType = 10
-	Map            DataType = 11
-	Set            DataType = 12
-	Push           DataType = 13
-)
-
 type Parser struct {
 	data []byte
 	pos  int
@@ -54,33 +35,33 @@ func (p *Parser) NextType() (DataType, error) {
 
 	switch t {
 	case '+':
-		return SimpleString, nil
+		return SimpleStringType, nil
 	case '-':
-		return SimpleError, nil
+		return SimpleErrorType, nil
 	case ':':
-		return Integer, nil
+		return IntegerType, nil
 	case '$':
-		return BulkString, nil
+		return BulkStringType, nil
 	case '*':
-		return Array, nil
+		return ArrayType, nil
 	case '_':
-		return Null, nil
+		return NullType, nil
 	case '#':
-		return Boolean, nil
+		return BooleanType, nil
 	case ',':
-		return Double, nil
+		return DoubleType, nil
 	case '(':
-		return BigNumber, nil
+		return BigNumberType, nil
 	case '!':
-		return BulkError, nil
+		return BulkErrorType, nil
 	case '=':
-		return VerbatimString, nil
+		return VerbatimStringType, nil
 	case '%':
-		return Map, nil
+		return MapType, nil
 	case '~':
-		return Set, nil
+		return SetType, nil
 	case '>':
-		return Push, nil
+		return PushType, nil
 	default:
 		return 0, errors.New("invalid redis data type")
 	}

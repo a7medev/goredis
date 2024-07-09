@@ -63,7 +63,9 @@ func handleConn(conn net.Conn) {
 
 		switch cmd {
 		case "PING":
-			if _, err := io.Copy(conn, strings.NewReader("+PONG\r\n")); err != nil {
+			pong := resp.NewSimpleString("PONG").Encode()
+
+			if _, err := io.Copy(conn, strings.NewReader(pong)); err != nil {
 				log.Fatalln("Error sending PONG to the request", err.Error())
 			}
 		case "ECHO":
@@ -74,7 +76,9 @@ func handleConn(conn net.Conn) {
 				log.Fatalln("Error parsing command: ", err.Error())
 			}
 
-			if _, err := io.Copy(conn, strings.NewReader(fmt.Sprintf("$%v\r\n%v\r\n", len(msg), msg))); err != nil {
+			result := resp.NewBulkString(msg).Encode()
+
+			if _, err := io.Copy(conn, strings.NewReader(result)); err != nil {
 				log.Fatalln("Error sending ECHO to the request", err.Error())
 			}
 		default:
