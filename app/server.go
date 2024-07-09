@@ -24,8 +24,23 @@ func main() {
 
 	defer conn.Close()
 
-	if _, err := io.Copy(conn, strings.NewReader("+PONG\r\n")); err != nil {
-		fmt.Println("Error sending PONG to the request", err.Error())
-		os.Exit(1)
+	buf := make([]byte, 256)
+	for {
+		_, err := conn.Read(buf)
+
+		if err == io.EOF {
+			fmt.Println("Bye!")
+			break
+		}
+
+		if err != nil {
+			fmt.Println("Error reading data from connection: ", err.Error())
+			os.Exit(1)
+		}
+
+		if _, err := io.Copy(conn, strings.NewReader("+PONG\r\n")); err != nil {
+			fmt.Println("Error sending PONG to the request", err.Error())
+			os.Exit(1)
+		}
 	}
 }
