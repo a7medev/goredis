@@ -100,7 +100,7 @@ func handleConn(conn net.Conn, db *storage.Database) {
 				log.Fatalln("Error parsing value: ", err.Error())
 			}
 
-			db.Set(key, value)
+			db.Set(key, value, storage.NeverExpires)
 
 			ok := resp.NewSimpleString("OK").Encode()
 
