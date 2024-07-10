@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/a7medev/goredis/resp"
 	"github.com/a7medev/goredis/server"
@@ -44,7 +46,45 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 		return
 	}
 
-	db.Set(key, value, storage.NeverExpires)
+	expiry := storage.NeverExpires
+
+	if args == 4 {
+		p.NextType()
+		subCmd, err := p.NextBulkString()
+
+		if err != nil {
+			fmt.Println("Error parsing sub-command:", err.Error())
+			return
+		}
+
+		switch subCmd {
+		case "PX":
+			p.NextType()
+			expiryStr, err := p.NextBulkString()
+
+			if err != nil {
+				fmt.Println("Error parsing expiry:", err.Error())
+				return
+			}
+
+			expiryMs, err := strconv.Atoi(expiryStr)
+
+			if err != nil {
+				fmt.Println("Error parsing expiry:", err.Error())
+				return
+			}
+
+			expiry = storage.Expiry{
+				Time:    time.Now().Add(time.Duration(expiryMs) * time.Millisecond),
+				Expires: true,
+			}
+		default:
+			fmt.Println("Error sub-command: invalid command", subCmd)
+			return
+		}
+	}
+
+	db.Set(key, value, expiry)
 
 	ok := resp.NewSimpleString("OK")
 
