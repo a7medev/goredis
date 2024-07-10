@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/a7medev/goredis/resp"
@@ -56,6 +57,8 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 			fmt.Println("Error parsing sub-command:", err.Error())
 			return
 		}
+
+		subCmd = strings.ToUpper(subCmd)
 
 		switch subCmd {
 		case "PX":
