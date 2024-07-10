@@ -9,9 +9,8 @@ import (
 	"strings"
 
 	"github.com/a7medev/goredis/app/resp"
+	"github.com/a7medev/goredis/app/storage"
 )
-
-var db = make(map[string]string)
 
 func main() {
 	ln, err := net.Listen("tcp", "0.0.0.0:6379")
@@ -20,17 +19,19 @@ func main() {
 		log.Fatalln("Failed to bind to port 6379")
 	}
 
+	db := storage.NewDatabase()
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Fatalln("Error accepting connection: ", err.Error())
 		}
 
-		go handleConn(conn)
+		go handleConn(conn, db)
 	}
 }
 
-func handleConn(conn net.Conn) {
+func handleConn(conn net.Conn, db *storage.Database) {
 	defer conn.Close()
 
 	buf := make([]byte, 4096)
@@ -99,7 +100,7 @@ func handleConn(conn net.Conn) {
 				log.Fatalln("Error parsing value: ", err.Error())
 			}
 
-			db[key] = value
+			db.Set(key, value)
 
 			ok := resp.NewSimpleString("OK").Encode()
 
@@ -113,7 +114,7 @@ func handleConn(conn net.Conn) {
 				log.Fatalln("Error parsing key: ", err.Error())
 			}
 
-			value, ok := db[key]
+			value, ok := db.Get(key)
 
 			if !ok {
 				null := resp.NewNullBulkString().Encode()
