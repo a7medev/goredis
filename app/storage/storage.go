@@ -5,13 +5,13 @@ import "sync"
 // Database is a simple, thread-safe, in-memory key-value store
 type Database struct {
 	data map[string]string
-	mu   sync.RWMutex
+	mu   *sync.RWMutex
 }
 
 func NewDatabase() *Database {
 	return &Database{
 		data: make(map[string]string),
-		mu:   sync.RWMutex{},
+		mu:   &sync.RWMutex{},
 	}
 }
 
