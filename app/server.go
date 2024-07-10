@@ -5,10 +5,13 @@ import (
 	"io"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 
 	"github.com/a7medev/goredis/app/resp"
 )
+
+var db = make(map[string]string)
 
 func main() {
 	ln, err := net.Listen("tcp", "0.0.0.0:6379")
@@ -81,8 +84,53 @@ func handleConn(conn net.Conn) {
 			if _, err := io.Copy(conn, strings.NewReader(result)); err != nil {
 				log.Fatalln("Error sending ECHO to the request", err.Error())
 			}
+		case "SET":
+			p.NextType()
+			key, err := p.NextBulkString()
+
+			if err != nil {
+				log.Fatalln("Error parsing key: ", err.Error())
+			}
+
+			p.NextType()
+			value, err := p.NextBulkString()
+
+			if err != nil {
+				log.Fatalln("Error parsing value: ", err.Error())
+			}
+
+			db[key] = value
+
+			ok := resp.NewSimpleString("OK").Encode()
+
+			if _, err := io.Copy(conn, strings.NewReader(ok)); err != nil {
+				log.Fatalln("Error sending OK to the request", err.Error())
+			}
+		case "GET":
+			p.NextType()
+			key, err := p.NextBulkString()
+			if err != nil {
+				log.Fatalln("Error parsing key: ", err.Error())
+			}
+
+			value, ok := db[key]
+
+			if !ok {
+				null := resp.NewNullBulkString().Encode()
+
+				if _, err := io.Copy(conn, strings.NewReader(null)); err != nil {
+					log.Fatalln("Error sending NULL to the request", err.Error())
+				}
+			} else {
+				result := resp.NewBulkString(value).Encode()
+
+				if _, err := io.Copy(conn, strings.NewReader(result)); err != nil {
+					log.Fatalln("Error sending GET to the request", err.Error())
+				}
+			}
+
 		default:
-			fmt.Println("Unknown command", cmd)
+			fmt.Println("Unknown command", strconv.Quote(string(buf[:n])))
 		}
 	}
 }
