@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/a7medev/goredis/app/resp"
-	"github.com/a7medev/goredis/app/storage"
+	"github.com/a7medev/goredis/resp"
+	"github.com/a7medev/goredis/storage"
 )
 
 const BufferSize = 4096

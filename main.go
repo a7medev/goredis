@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/a7medev/goredis/app/commands"
-	"github.com/a7medev/goredis/app/server"
+	"github.com/a7medev/goredis/commands"
+	"github.com/a7medev/goredis/server"
 )
 
 func main() {

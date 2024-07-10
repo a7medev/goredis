@@ -3,9 +3,9 @@ package commands
 import (
 	"fmt"
 
-	"github.com/a7medev/goredis/app/resp"
-	"github.com/a7medev/goredis/app/server"
-	"github.com/a7medev/goredis/app/storage"
+	"github.com/a7medev/goredis/resp"
+	"github.com/a7medev/goredis/server"
+	"github.com/a7medev/goredis/storage"
 )
 
 func Ping(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
