@@ -6,6 +6,8 @@ import (
 	"strconv"
 )
 
+var ErrNull = errors.New("null")
+
 type Parser struct {
 	data []byte
 	pos  int
@@ -111,6 +113,10 @@ func (p *Parser) NextBulkString() (string, error) {
 
 	if err != nil {
 		return "", err
+	}
+
+	if length == -1 {
+		return "", ErrNull
 	}
 
 	result := string(p.data[p.pos : p.pos+length])

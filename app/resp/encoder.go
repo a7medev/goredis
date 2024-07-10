@@ -6,6 +6,26 @@ type Encodable interface {
 	Encode() string
 }
 
+type NullBulkString struct{}
+
+func NewNullBulkString() *NullBulkString {
+	return &NullBulkString{}
+}
+
+func (n *NullBulkString) Encode() string {
+	return "$-1\r\n"
+}
+
+type NullArray struct{}
+
+func NewNullArray() *NullArray {
+	return &NullArray{}
+}
+
+func (n *NullArray) Encode() string {
+	return "*-1\r\n"
+}
+
 type SimpleString struct {
 	Value string
 }
