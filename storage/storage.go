@@ -30,11 +30,38 @@ func NewDatabase() *Database {
 	}
 }
 
-func (db *Database) Set(key, value string, expiry Expiry) {
+type SetMode int64
+
+const (
+	SetDefault SetMode = 0
+	// Only set the key if it does not already exist
+	SetNX SetMode = 1
+	// Only set the key if it already exists
+	SetXX SetMode = 2
+)
+
+func (db *Database) Set(key, value string, expiry Expiry, mode SetMode, keepTTL, get bool) (string, bool, bool) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	db.data[key] = Entry{value: value, expiry: expiry}
+	entry, ok := db.data[key]
+
+	if keepTTL {
+		expiry = entry.expiry
+	}
+
+	shouldSet := !(mode == SetNX && ok) && !(mode == SetXX && !ok)
+
+	if shouldSet {
+		db.data[key] = Entry{value: value, expiry: expiry}
+	}
+
+	if get {
+		current, exists := db.data[key]
+		return current.value, exists, shouldSet
+	}
+
+	return "", true, shouldSet
 }
 
 func (db *Database) Get(key string) (string, bool) {

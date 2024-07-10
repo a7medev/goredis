@@ -36,6 +36,7 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 
 	if err != nil {
 		fmt.Println("Error parsing key:", err.Error())
+		c.Reply(resp.NewSimpleError("ERR syntax error"))
 		return
 	}
 
@@ -44,54 +45,106 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 
 	if err != nil {
 		fmt.Println("Error parsing value:", err.Error())
+		c.Reply(resp.NewSimpleError("ERR syntax error"))
 		return
 	}
 
 	expiry := storage.NeverExpires
+	mode := storage.SetDefault
+	get := false
+	keepTTL := false
 
-	if args == 4 {
+	// Parse extra arguments to SET
+	for args > 2 {
 		p.NextType()
-		subCmd, err := p.NextBulkString()
+		arg, err := p.NextBulkString()
 
 		if err != nil {
-			fmt.Println("Error parsing sub-command:", err.Error())
+			fmt.Println("Error parsing argument:", err.Error())
+			c.Reply(resp.NewSimpleError("ERR syntax error"))
 			return
 		}
 
-		subCmd = strings.ToUpper(subCmd)
+		arg = strings.ToUpper(arg)
 
-		switch subCmd {
-		case "PX":
-			p.NextType()
-			expiryStr, err := p.NextBulkString()
-
-			if err != nil {
-				fmt.Println("Error parsing expiry:", err.Error())
+		switch arg {
+		case "NX":
+			if mode == storage.SetXX {
+				fmt.Println("Error parsing argument: Can't use both NX and XX")
+				c.Reply(resp.NewSimpleError("ERR syntax error"))
 				return
 			}
 
-			expiryMs, err := strconv.Atoi(expiryStr)
+			mode = storage.SetNX
+		case "XX":
+			if mode == storage.SetNX {
+				fmt.Println("Error parsing argument: Can't use both NX and XX")
+				c.Reply(resp.NewSimpleError("ERR syntax error"))
+				return
+			}
+
+			mode = storage.SetXX
+		case "GET":
+			get = true
+		case "EX", "PX", "EXAT", "PXAT":
+			p.NextType()
+			timeStr, err := p.NextBulkString()
+
+			args--
 
 			if err != nil {
 				fmt.Println("Error parsing expiry:", err.Error())
+				c.Reply(resp.NewSimpleError("ERR syntax error"))
 				return
+			}
+
+			timeInt, err := strconv.ParseInt(timeStr, 10, 64)
+
+			if err != nil || timeInt <= 0 {
+				if err != nil {
+					fmt.Println("Error parsing expiry:", err.Error())
+				}
+				c.Reply(resp.NewSimpleError("ERR invalid expire time in 'set' command"))
+				return
+			}
+
+			var t time.Time
+
+			// TODO: allow only one of EX, PX, EXAT, PXAT and reply with a syntax error if more than one is used
+			// Just like NX and XX
+			switch arg {
+			case "EX":
+				t = time.Now().Add(time.Duration(timeInt) * time.Second)
+			case "PX":
+				t = time.Now().Add(time.Duration(timeInt) * time.Millisecond)
+			case "EXAT":
+				t = time.Unix(timeInt, 0)
+			case "PXAT":
+				t = time.UnixMilli(timeInt)
 			}
 
 			expiry = storage.Expiry{
-				Time:    time.Now().Add(time.Duration(expiryMs) * time.Millisecond),
+				Time:    t,
 				Expires: true,
 			}
-		default:
-			fmt.Println("Error sub-command: invalid command", subCmd)
-			return
+		case "KEEPTTL":
+			keepTTL = true
 		}
+
+		args--
 	}
 
-	db.Set(key, value, expiry)
+	result, exists, isSet := db.Set(key, value, expiry, mode, keepTTL, get)
 
-	ok := resp.NewSimpleString("OK")
-
-	c.Reply(ok)
+	if get && exists {
+		c.Reply(resp.NewBulkString(result))
+	} else if get && !exists {
+		c.Reply(resp.NewNullBulkString())
+	} else if isSet {
+		c.Reply(resp.NewSimpleString("OK"))
+	} else {
+		c.Reply(resp.NewNullBulkString())
+	}
 }
 
 func Get(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
