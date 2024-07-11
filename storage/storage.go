@@ -75,7 +75,7 @@ const (
 	SetXX SetMode = 2
 )
 
-func (db *Database) Set(key, value string, expiry Expiry, mode SetMode, keepTTL, get bool) (string, bool, bool) {
+func (db *Database) Set(key, value string, expiry Expiry, mode SetMode, keepTTL, get bool) (previous string, exists, isSet bool) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -92,8 +92,7 @@ func (db *Database) Set(key, value string, expiry Expiry, mode SetMode, keepTTL,
 	}
 
 	if get {
-		current, exists := db.data[key]
-		return current.value, exists, shouldSet
+		return entry.value, ok, shouldSet
 	}
 
 	return "", true, shouldSet
