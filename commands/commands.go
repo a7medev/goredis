@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/a7medev/goredis/resp"
 	"github.com/a7medev/goredis/server"
@@ -98,9 +97,9 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 				return
 			}
 
-			timeInt, err := strconv.ParseInt(timeStr, 10, 64)
+			t, err := strconv.ParseInt(timeStr, 10, 64)
 
-			if err != nil || timeInt <= 0 {
+			if err != nil || t <= 0 {
 				if err != nil {
 					fmt.Println("Error parsing expiry:", err.Error())
 				}
@@ -108,24 +107,17 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 				return
 			}
 
-			var t time.Time
-
 			// TODO: allow only one of EX, PX, EXAT, PXAT and reply with a syntax error if more than one is used
 			// Just like NX and XX
 			switch arg {
 			case "EX":
-				t = time.Now().Add(time.Duration(timeInt) * time.Second)
+				expiry = storage.NewSecondsExpiry(t)
 			case "PX":
-				t = time.Now().Add(time.Duration(timeInt) * time.Millisecond)
+				expiry = storage.NewMillisExpiry(t)
 			case "EXAT":
-				t = time.Unix(timeInt, 0)
+				expiry = storage.NewUnixSecondExpiry(t)
 			case "PXAT":
-				t = time.UnixMilli(timeInt)
-			}
-
-			expiry = storage.Expiry{
-				Time:    t,
-				Expires: true,
+				expiry = storage.NewUnixMilliExpiry(t)
 			}
 		case "KEEPTTL":
 			keepTTL = true

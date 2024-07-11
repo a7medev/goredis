@@ -12,6 +12,26 @@ type Expiry struct {
 
 var NeverExpires = Expiry{Expires: false}
 
+func NewSecondsExpiry(seconds int64) Expiry {
+	t := time.Now().Add(time.Duration(seconds) * time.Second)
+	return Expiry{Time: t, Expires: true}
+}
+
+func NewMillisExpiry(millis int64) Expiry {
+	t := time.Now().Add(time.Duration(millis) * time.Millisecond)
+	return Expiry{Time: t, Expires: true}
+}
+
+func NewUnixSecondExpiry(seconds int64) Expiry {
+	t := time.Unix(seconds, 0)
+	return Expiry{Time: t, Expires: true}
+}
+
+func NewUnixMilliExpiry(millis int64) Expiry {
+	t := time.UnixMilli(millis)
+	return Expiry{Time: t, Expires: true}
+}
+
 type Entry struct {
 	value  string
 	expiry Expiry
