@@ -10,6 +10,21 @@ type Expiry struct {
 	Expires bool
 }
 
+func NewExpiry(t int64, mode string) Expiry {
+	switch mode {
+	case "EX":
+		return NewSecondsExpiry(t)
+	case "PX":
+		return NewMillisExpiry(t)
+	case "EXAT":
+		return NewUnixSecondExpiry(t)
+	case "PXAT":
+		return NewUnixMilliExpiry(t)
+	default:
+		return NeverExpires
+	}
+}
+
 var NeverExpires = Expiry{Expires: false}
 
 func NewSecondsExpiry(seconds int64) Expiry {

@@ -83,8 +83,10 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 			}
 
 			mode = storage.SetXX
+
 		case "GET":
 			get = true
+
 		case "EX", "PX", "EXAT", "PXAT":
 			p.NextType()
 			timeStr, err := p.NextBulkString()
@@ -107,18 +109,8 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 				return
 			}
 
-			// TODO: allow only one of EX, PX, EXAT, PXAT and reply with a syntax error if more than one is used
-			// Just like NX and XX
-			switch arg {
-			case "EX":
-				expiry = storage.NewSecondsExpiry(t)
-			case "PX":
-				expiry = storage.NewMillisExpiry(t)
-			case "EXAT":
-				expiry = storage.NewUnixSecondExpiry(t)
-			case "PXAT":
-				expiry = storage.NewUnixMilliExpiry(t)
-			}
+			expiry = storage.NewExpiry(t, arg)
+
 		case "KEEPTTL":
 			keepTTL = true
 		}
