@@ -12,6 +12,7 @@ func main() {
 	s.AddCommand("ECHO", commands.Echo)
 	s.AddCommand("SET", commands.Set)
 	s.AddCommand("GET", commands.Get)
+	s.AddCommand("DEL", commands.Del)
 
 	s.Listen()
 }

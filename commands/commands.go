@@ -152,3 +152,24 @@ func Get(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 		c.Reply(result)
 	}
 }
+
+func Del(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
+	deleted := 0
+
+	for i := 0; i < args; i++ {
+		p.NextType()
+		key, err := p.NextBulkString()
+
+		if err != nil {
+			fmt.Println("Error parsing key: ", err.Error())
+			c.Reply(resp.NewSimpleError("ERR syntax error"))
+			return
+		}
+
+		if ok := db.Delete(key); ok {
+			deleted++
+		}
+	}
+
+	c.Reply(resp.NewInteger(deleted))
+}

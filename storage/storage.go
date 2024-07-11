@@ -111,3 +111,17 @@ func (db *Database) Get(key string) (string, bool) {
 
 	return entry.value, ok
 }
+
+func (db *Database) Delete(key string) bool {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	_, ok := db.data[key]
+
+	if ok {
+		delete(db.data, key)
+		return true
+	}
+
+	return false
+}
