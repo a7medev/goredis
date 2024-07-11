@@ -1,12 +1,19 @@
 package main
 
 import (
+	"flag"
+	"fmt"
+
 	"github.com/a7medev/goredis/commands"
 	"github.com/a7medev/goredis/server"
 )
 
 func main() {
-	s := server.NewServer(":6379")
+	port := flag.Uint("port", 6379, "Port to listen on")
+	flag.Parse()
+
+	addr := fmt.Sprintf(":%v", *port)
+	s := server.NewServer(addr)
 
 	s.AddCommand("PING", commands.Ping)
 	s.AddCommand("ECHO", commands.Echo)

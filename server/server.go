@@ -48,6 +48,8 @@ func (s *Server) Listen() {
 		log.Fatalln("Failed to bind to listen on address", s.Address)
 	}
 
+	fmt.Println("Listening on", s.Address)
+
 	s.Listener = ln
 
 	db := storage.NewDatabase()
