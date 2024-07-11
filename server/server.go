@@ -71,6 +71,8 @@ func (s *Server) AddCommand(cmd string, handler CommandHandler) {
 func (s *Server) handleConn(conn net.Conn, db *storage.Database) {
 	defer conn.Close()
 
+	fmt.Println("Connection from", conn.RemoteAddr())
+
 	buf := make([]byte, BufferSize)
 	for {
 		n, err := conn.Read(buf)
@@ -105,11 +107,13 @@ func (s *Server) handleConn(conn net.Conn, db *storage.Database) {
 
 		handler, ok := s.commands[cmd]
 
+		c := &Connection{Conn: conn}
 		if ok {
-			connection := &Connection{Conn: conn}
-			handler(connection, db, p, cmdLen-1)
+			handler(c, db, p, cmdLen-1)
 		} else {
 			fmt.Println("Unknown command", strconv.Quote(string(buf[:n])))
+			msg := fmt.Sprintf("ERR unknown command '%v'", cmd)
+			c.Reply(resp.NewSimpleError(msg))
 		}
 	}
 }

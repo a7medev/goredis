@@ -113,6 +113,11 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 
 		case "KEEPTTL":
 			keepTTL = true
+
+		default:
+			fmt.Println("Error parsing argument: Unknown argument", arg)
+			c.Reply(resp.NewSimpleError("ERR syntax error"))
+			return
 		}
 
 		args--
