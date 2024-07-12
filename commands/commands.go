@@ -10,14 +10,14 @@ import (
 	"github.com/a7medev/goredis/storage"
 )
 
-func Ping(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
+func Ping(ctx *server.Context) {
 	pong := resp.NewSimpleString("PONG")
-	c.Reply(pong)
+	ctx.Reply(pong)
 }
 
-func Echo(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
-	p.NextType()
-	msg, err := p.NextBulkString()
+func Echo(ctx *server.Context) {
+	ctx.Parser.NextType()
+	msg, err := ctx.Parser.NextBulkString()
 
 	if err != nil {
 		fmt.Println("Error parsing command:", err.Error())
@@ -26,25 +26,25 @@ func Echo(c *server.Connection, db *storage.Database, p *resp.Parser, args int) 
 
 	result := resp.NewBulkString(msg)
 
-	c.Reply(result)
+	ctx.Reply(result)
 }
 
-func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
-	p.NextType()
-	key, err := p.NextBulkString()
+func Set(ctx *server.Context) {
+	ctx.Parser.NextType()
+	key, err := ctx.Parser.NextBulkString()
 
 	if err != nil {
 		fmt.Println("Error parsing key:", err.Error())
-		c.Reply(resp.NewSimpleError("ERR syntax error"))
+		ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 		return
 	}
 
-	p.NextType()
-	value, err := p.NextBulkString()
+	ctx.Parser.NextType()
+	value, err := ctx.Parser.NextBulkString()
 
 	if err != nil {
 		fmt.Println("Error parsing value:", err.Error())
-		c.Reply(resp.NewSimpleError("ERR syntax error"))
+		ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 		return
 	}
 
@@ -54,13 +54,13 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 	keepTTL := false
 
 	// Parse extra arguments to SET
-	for args > 2 {
-		p.NextType()
-		arg, err := p.NextBulkString()
+	for ctx.Args > 2 {
+		ctx.Parser.NextType()
+		arg, err := ctx.Parser.NextBulkString()
 
 		if err != nil {
 			fmt.Println("Error parsing argument:", err.Error())
-			c.Reply(resp.NewSimpleError("ERR syntax error"))
+			ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 			return
 		}
 
@@ -70,7 +70,7 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 		case "NX":
 			if mode == storage.SetXX {
 				fmt.Println("Error parsing argument: Can't use both NX and XX")
-				c.Reply(resp.NewSimpleError("ERR syntax error"))
+				ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 				return
 			}
 
@@ -78,7 +78,7 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 		case "XX":
 			if mode == storage.SetNX {
 				fmt.Println("Error parsing argument: Can't use both NX and XX")
-				c.Reply(resp.NewSimpleError("ERR syntax error"))
+				ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 				return
 			}
 
@@ -88,14 +88,14 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 			get = true
 
 		case "EX", "PX", "EXAT", "PXAT":
-			p.NextType()
-			timeStr, err := p.NextBulkString()
+			ctx.Parser.NextType()
+			timeStr, err := ctx.Parser.NextBulkString()
 
-			args--
+			ctx.Args--
 
 			if err != nil {
 				fmt.Println("Error parsing expiry:", err.Error())
-				c.Reply(resp.NewSimpleError("ERR syntax error"))
+				ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 				return
 			}
 
@@ -105,7 +105,7 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 				if err != nil {
 					fmt.Println("Error parsing expiry:", err.Error())
 				}
-				c.Reply(resp.NewSimpleError("ERR invalid expire time in 'set' command"))
+				ctx.Reply(resp.NewSimpleError("ERR invalid expire time in 'set' command"))
 				return
 			}
 
@@ -116,65 +116,65 @@ func Set(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
 
 		default:
 			fmt.Println("Error parsing argument: Unknown argument", arg)
-			c.Reply(resp.NewSimpleError("ERR syntax error"))
+			ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 			return
 		}
 
-		args--
+		ctx.Args--
 	}
 
-	result, exists, isSet := db.Set(key, value, expiry, mode, keepTTL, get)
+	result, exists, isSet := ctx.DB.Set(key, value, expiry, mode, keepTTL, get)
 
 	if get && exists {
-		c.Reply(resp.NewBulkString(result))
+		ctx.Reply(resp.NewBulkString(result))
 	} else if get && !exists {
-		c.Reply(resp.NewNullBulkString())
+		ctx.Reply(resp.NewNullBulkString())
 	} else if isSet {
-		c.Reply(resp.NewSimpleString("OK"))
+		ctx.Reply(resp.NewSimpleString("OK"))
 	} else {
-		c.Reply(resp.NewNullBulkString())
+		ctx.Reply(resp.NewNullBulkString())
 	}
 }
 
-func Get(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
-	p.NextType()
-	key, err := p.NextBulkString()
+func Get(ctx *server.Context) {
+	ctx.Parser.NextType()
+	key, err := ctx.Parser.NextBulkString()
 
 	if err != nil {
 		fmt.Println("Error parsing key: ", err.Error())
 		return
 	}
 
-	value, ok := db.Get(key)
+	value, ok := ctx.DB.Get(key)
 
 	if !ok {
 		null := resp.NewNullBulkString()
 
-		c.Reply(null)
+		ctx.Reply(null)
 	} else {
 		result := resp.NewBulkString(value)
 
-		c.Reply(result)
+		ctx.Reply(result)
 	}
 }
 
-func Del(c *server.Connection, db *storage.Database, p *resp.Parser, args int) {
+func Del(ctx *server.Context) {
 	deleted := 0
 
-	for i := 0; i < args; i++ {
-		p.NextType()
-		key, err := p.NextBulkString()
+	for i := 0; i < ctx.Args; i++ {
+		ctx.Parser.NextType()
+		key, err := ctx.Parser.NextBulkString()
 
 		if err != nil {
 			fmt.Println("Error parsing key: ", err.Error())
-			c.Reply(resp.NewSimpleError("ERR syntax error"))
+			ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 			return
 		}
 
-		if ok := db.Delete(key); ok {
+		if ok := ctx.DB.Delete(key); ok {
 			deleted++
 		}
 	}
 
-	c.Reply(resp.NewInteger(deleted))
+	ctx.Reply(resp.NewInteger(deleted))
 }

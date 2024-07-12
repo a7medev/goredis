@@ -14,13 +14,25 @@ import (
 
 const BufferSize = 4096
 
-type CommandHandler func(conn *Connection, db *storage.Database, p *resp.Parser, args int)
+type CommandHandler func(ctx *Context)
 
-type Connection struct {
-	Conn net.Conn
+type Context struct {
+	Conn   net.Conn
+	DB     *storage.Database
+	Parser *resp.Parser
+	Args   int
 }
 
-func (c *Connection) Reply(reply resp.Encodable) error {
+func NewContext(conn net.Conn, db *storage.Database, parser *resp.Parser, args int) *Context {
+	return &Context{
+		Conn:   conn,
+		DB:     db,
+		Parser: parser,
+		Args:   args,
+	}
+}
+
+func (c *Context) Reply(reply resp.Encodable) error {
 	s := strings.NewReader(reply.Encode())
 
 	_, err := io.Copy(c.Conn, s)
@@ -109,13 +121,13 @@ func (s *Server) handleConn(conn net.Conn, db *storage.Database) {
 
 		handler, ok := s.commands[cmd]
 
-		c := &Connection{Conn: conn}
+		ctx := NewContext(conn, db, p, cmdLen-1)
 		if ok {
-			handler(c, db, p, cmdLen-1)
+			handler(ctx)
 		} else {
 			fmt.Println("Unknown command", strconv.Quote(string(buf[:n])))
 			msg := fmt.Sprintf("ERR unknown command '%v'", cmd)
-			c.Reply(resp.NewSimpleError(msg))
+			ctx.Reply(resp.NewSimpleError(msg))
 		}
 	}
 }
