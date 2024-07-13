@@ -76,9 +76,10 @@ func (p *Parser) isCRLF(i int) bool {
 func (p *Parser) NextSimpleString() (string, error) {
 	for i := p.pos; i < p.size; i++ {
 		if p.isCRLF(i) {
+			result := string(p.data[p.pos:i])
 			// Skip the \r\n
 			p.pos = i + 2
-			return string(p.data[p.pos:i]), nil
+			return result, nil
 		}
 	}
 
