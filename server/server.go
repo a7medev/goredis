@@ -17,14 +17,75 @@ const BufferSize = 4096
 type CommandHandler func(ctx *Context)
 
 type Context struct {
+	Config *Config
 	Conn   net.Conn
 	DB     *storage.Database
 	Parser *resp.Parser
 	Args   int
 }
 
-func NewContext(conn net.Conn, db *storage.Database, parser *resp.Parser, args int) *Context {
+type Config struct {
+	Sections []*ConfigSection
+}
+
+type ConfigSection struct {
+	Name    string
+	Entries []ConfigEntry
+}
+
+type ConfigEntry struct {
+	Name  string
+	Value string // TODO: Allow different types of values
+}
+
+func (c *Config) Section(name string) *ConfigSection {
+	for _, s := range c.Sections {
+		if s.Matches(name) {
+			return s
+		}
+	}
+
+	return nil
+}
+
+func (s *ConfigSection) Matches(name string) bool {
+	return strings.ToUpper(s.Name) == strings.ToUpper(name)
+}
+
+func (s *ConfigSection) String() string {
+	b := strings.Builder{}
+
+	b.WriteString("# ")
+	b.WriteString(s.Name)
+	b.WriteByte('\n')
+
+	for _, e := range s.Entries {
+		b.WriteString(e.Name)
+		b.WriteByte(':')
+		b.WriteString(e.Value)
+		b.WriteByte('\n')
+	}
+
+	return b.String()
+}
+
+func NewConfig() *Config {
+	replication := &ConfigSection{
+		Name: "Replication",
+		Entries: []ConfigEntry{
+			{"role", "master"},
+			{"master_host", "localhost"},
+		},
+	}
+
+	return &Config{
+		Sections: []*ConfigSection{replication},
+	}
+}
+
+func NewContext(config *Config, conn net.Conn, db *storage.Database, parser *resp.Parser, args int) *Context {
 	return &Context{
+		Config: config,
 		Conn:   conn,
 		DB:     db,
 		Parser: parser,
@@ -53,7 +114,10 @@ func NewServer(address string) *Server {
 	}
 }
 
-func (s *Server) Listen() {
+// TODO: make the server exit gracefully.
+func (s *Server) Start() {
+	config := NewConfig()
+
 	ln, err := net.Listen("tcp", s.Address)
 
 	if err != nil {
@@ -74,7 +138,7 @@ func (s *Server) Listen() {
 			continue
 		}
 
-		go s.handleConn(conn, db)
+		go s.handleConn(config, conn, db)
 	}
 }
 
@@ -82,7 +146,7 @@ func (s *Server) AddCommand(cmd string, handler CommandHandler) {
 	s.commands[cmd] = handler
 }
 
-func (s *Server) handleConn(conn net.Conn, db *storage.Database) {
+func (s *Server) handleConn(config *Config, conn net.Conn, db *storage.Database) {
 	defer conn.Close()
 
 	fmt.Println("Connection from", conn.RemoteAddr())
@@ -121,7 +185,7 @@ func (s *Server) handleConn(conn net.Conn, db *storage.Database) {
 
 		handler, ok := s.commands[cmd]
 
-		ctx := NewContext(conn, db, p, cmdLen-1)
+		ctx := NewContext(config, conn, db, p, cmdLen-1)
 		if ok {
 			handler(ctx)
 		} else {

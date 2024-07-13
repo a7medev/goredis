@@ -178,3 +178,43 @@ func Del(ctx *server.Context) {
 
 	ctx.Reply(resp.NewInteger(deleted))
 }
+
+func Info(ctx *server.Context) {
+	b := strings.Builder{}
+
+	sections := []string{}
+
+	for range ctx.Args {
+		ctx.Parser.NextType()
+		section, err := ctx.Parser.NextBulkString()
+
+		if err != nil {
+			fmt.Println("Error parsing section: ", err.Error())
+			ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+			return
+		}
+
+		sections = append(sections, section)
+	}
+
+	for _, s := range ctx.Config.Sections {
+		match := false
+
+		if ctx.Args > 0 {
+			for _, section := range sections {
+				if s.Matches(section) {
+					match = true
+					break
+				}
+			}
+		}
+
+		if ctx.Args == 0 || match {
+			b.WriteString(s.String())
+			b.WriteByte('\n')
+		}
+	}
+
+	info := resp.NewBulkString(b.String())
+	ctx.Reply(info)
+}

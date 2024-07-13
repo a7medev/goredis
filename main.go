@@ -20,6 +20,7 @@ func main() {
 	s.AddCommand("SET", commands.Set)
 	s.AddCommand("GET", commands.Get)
 	s.AddCommand("DEL", commands.Del)
+	s.AddCommand("INFO", commands.Info)
 
-	s.Listen()
+	s.Start()
 }
