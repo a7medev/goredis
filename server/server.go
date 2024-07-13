@@ -71,6 +71,10 @@ func (s *Server) Start() {
 
 	db := storage.NewDatabase()
 
+	if s.Config.Replication.Role == config.RoleModeSlave {
+		go s.startReplication()
+	}
+
 	for {
 		conn, err := s.Listener.Accept()
 
@@ -92,8 +96,12 @@ func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Da
 
 	fmt.Println("Connection from", conn.RemoteAddr())
 
+	// TODO: Probably obtain buffer from a pool to reduce memory allocations.
 	buf := make([]byte, BufferSize)
 	for {
+		// TODO: Clients could send multiple commands in one go.
+		// We need to account for that by checking when we've read a full command if there's more data to read.
+		// The current behavior expects a single command in a single read operation which is not always correct.
 		n, err := conn.Read(buf)
 
 		if err == io.EOF {
@@ -135,4 +143,154 @@ func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Da
 			ctx.Reply(resp.NewSimpleError(msg))
 		}
 	}
+}
+
+func (s *Server) startReplication() {
+	addr := fmt.Sprintf("%v:%v", s.Config.Replication.MasterHost, s.Config.Replication.MasterPort)
+	conn, err := net.Dial("tcp", addr)
+
+	if err != nil {
+		fmt.Println("Failed to connect to master", addr)
+		return
+	}
+
+	defer conn.Close()
+
+	fmt.Println("Connected to master", addr)
+
+	// PING master
+	ping := resp.NewArray(resp.NewBulkString("PING"))
+	_, err = conn.Write([]byte(ping.Encode()))
+
+	if err != nil {
+		fmt.Println("Failed to PING master")
+		return
+	}
+
+	buf := make([]byte, 256)
+	n, err := conn.Read(buf)
+
+	if err != nil {
+		fmt.Println("Failed to read from master")
+		return
+	}
+
+	p := resp.NewParser(buf, n)
+	p.NextType()
+
+	pong, err := p.NextSimpleString()
+
+	if err != nil {
+		fmt.Println("Failed to parse PONG from master")
+		return
+	}
+
+	if pong != "PONG" {
+		fmt.Println("Master didn't reply with PONG but rather with", pong)
+		return
+	}
+
+	fmt.Println("Master replied with PONG, starting replication")
+
+	// REPLCONF listening-port <port>
+	// REPLCONF capa eof capa psync2
+
+	replconf := resp.NewBulkString("REPLCONF")
+	listiningPort := resp.NewBulkString("listening-port")
+	port := resp.NewBulkString(strconv.Itoa(int(s.Config.Server.Port)))
+	cmd := resp.NewArray(replconf, listiningPort, port)
+
+	_, err = conn.Write([]byte(cmd.Encode()))
+
+	if err != nil {
+		fmt.Println("Failed to send REPLCONF listening-port to master")
+		return
+	}
+
+	n, err = conn.Read(buf)
+
+	if err != nil {
+		fmt.Println("Failed to read from master")
+		return
+	}
+
+	p = resp.NewParser(buf, n)
+	p.NextType()
+	ok, err := p.NextSimpleString()
+	if err != nil {
+		fmt.Println("Failed to parse result from master")
+		return
+	}
+
+	if ok != "OK" {
+		fmt.Println("Master didn't reply with OK but rather with", ok)
+		return
+	}
+
+	fmt.Println("Master replied with OK to REPLCONF listening-port")
+
+	capa := resp.NewBulkString("capa")
+	eof := resp.NewBulkString("eof")
+	psync2 := resp.NewBulkString("psync2")
+	cmd = resp.NewArray(replconf, capa, eof, capa, psync2)
+
+	_, err = conn.Write([]byte(cmd.Encode()))
+
+	if err != nil {
+		fmt.Println("Failed to send REPLCONF capa psync2 to master")
+		return
+	}
+
+	n, err = conn.Read(buf)
+
+	if err != nil {
+		fmt.Println("Failed to read from master")
+		return
+	}
+
+	p = resp.NewParser(buf, n)
+	p.NextType()
+	ok, err = p.NextSimpleString()
+
+	if err != nil {
+		fmt.Println("Failed to parse result from master")
+		return
+	}
+
+	if ok != "OK" {
+		fmt.Println("Master didn't reply with OK but rather with", ok)
+		return
+	}
+
+	fmt.Println("Master replied with OK to REPLCONF capa psync2")
+
+	// PSYNC <replicationId> <offset>
+
+	psync := resp.NewBulkString("PSYNC")
+	replId := resp.NewBulkString(s.Config.Replication.MasterReplID)
+	offset := resp.NewBulkString(strconv.Itoa(s.Config.Replication.MasterReplOffset))
+	cmd = resp.NewArray(psync, replId, offset)
+
+	_, err = conn.Write([]byte(cmd.Encode()))
+
+	if err != nil {
+		fmt.Println("Failed to send PSYNC to master")
+		return
+	}
+
+	// TODO: Read PSYNC reply from master
+	// TODO: Read RDB from master and load it into the database
+	// Should do so after implementing RDB encoding/decoding.
+
+	// n, err = conn.Read(buf)
+
+	// if err != nil {
+	// 	fmt.Println("Failed to read from master")
+	// 	return
+	// }
+
+	// p = resp.NewParser(buf, n)
+	// p.NextType()
+
+	// _, err = p.NextSimpleString()
 }

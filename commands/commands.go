@@ -2,9 +2,11 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
+	"github.com/a7medev/goredis/rdb"
 	"github.com/a7medev/goredis/resp"
 	"github.com/a7medev/goredis/server"
 	"github.com/a7medev/goredis/storage"
@@ -213,4 +215,29 @@ func Info(ctx *server.Context) {
 
 	info := resp.NewBulkString(b.String())
 	ctx.Reply(info)
+}
+
+func ReplConf(ctx *server.Context) {
+	// TODO: handle REPLCONF arguments
+	ctx.Reply(resp.NewSimpleString("OK"))
+}
+
+func PSync(ctx *server.Context) {
+	replId := ctx.Config.Replication.MasterReplID
+	replOffset := ctx.Config.Replication.MasterReplOffset
+
+	result := fmt.Sprintf("FULLRESYNC %v %v", replId, replOffset)
+
+	ctx.Reply(resp.NewSimpleString(result))
+
+	// TODO: export a real RDB file once RDB is implemented into the server.
+	// For now, we'll just send an empty RDB file.
+	content, err := os.ReadFile("./empty.rdb")
+	if err != nil {
+		fmt.Println("Error reading RDB file:", err.Error())
+		ctx.Reply(resp.NewSimpleError("ERR internal error"))
+		return
+	}
+
+	ctx.Reply(rdb.NewRDB(content))
 }

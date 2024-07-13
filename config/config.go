@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 )
 
@@ -22,9 +23,12 @@ const (
 )
 
 type ReplicationConfig struct {
-	Role       RoleMode
-	MasterHost string
-	MasterPort uint64
+	Role             RoleMode
+	MasterHost       string
+	MasterPort       uint64
+	MasterReplID     string
+	MasterReplOffset int
+	ConnectedSlaves  uint
 }
 
 // entry converts a config entry to a string in the format used in the INFO command.
@@ -48,44 +52,35 @@ func (c *ReplicationConfig) String() string {
 	b.WriteString("# Replication\n")
 
 	b.WriteString(entry("role", c.Role))
-	b.WriteString(entry("master_host", c.MasterHost))
-	b.WriteString(entry("master_port", c.MasterPort))
+	b.WriteString(entry("connected_slaves", c.ConnectedSlaves))
+	b.WriteString(entry("master_replid", c.MasterReplID))
+	b.WriteString(entry("master_repl_offset", c.MasterReplOffset))
 
 	b.WriteByte('\n')
 
 	return b.String()
 }
 
-type ConfigBuilder struct {
-	config *Config
-}
-
-func NewConfigBuilder() *ConfigBuilder {
-	return &ConfigBuilder{
-		config: &Config{Replication: ReplicationConfig{Role: RoleModeMaster}},
+func NewConfig(port uint) *Config {
+	return &Config{
+		Server: ServerConfig{Port: port},
+		Replication: ReplicationConfig{
+			Role:             RoleModeMaster,
+			MasterReplID:     "?",
+			MasterReplOffset: -1,
+		},
 	}
 }
 
-func (b *ConfigBuilder) WithPort(port uint) *ConfigBuilder {
-	b.config.Server.Port = port
-	return b
-}
+// RandomID generates a hexadecimal random ID with specified characters length to be used as a master replication ID.
+func RandomID(length int) string {
+	hexadigits := "0123456789abcdef"
+	n := len(hexadigits)
 
-func (b *ConfigBuilder) WithRole(role RoleMode) *ConfigBuilder {
-	b.config.Replication.Role = role
-	return b
-}
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = hexadigits[rand.Intn(n)]
+	}
 
-func (b *ConfigBuilder) WithMasterHost(host string) *ConfigBuilder {
-	b.config.Replication.MasterHost = host
-	return b
-}
-
-func (b *ConfigBuilder) WithMasterPort(port uint64) *ConfigBuilder {
-	b.config.Replication.MasterPort = port
-	return b
-}
-
-func (b *ConfigBuilder) Build() *Config {
-	return b.config
+	return string(b)
 }

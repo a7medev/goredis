@@ -19,9 +19,7 @@ func main() {
 	flag.StringVar(&replicaOf, "replicaof", "", "Master server to replicate from as 'host port'")
 	flag.Parse()
 
-	configBuilder := config.NewConfigBuilder().
-		WithPort(port).
-		WithRole(config.RoleModeMaster)
+	cfg := config.NewConfig(port)
 
 	if replicaOf != "" {
 		masterHost, s, ok := strings.Cut(replicaOf, " ")
@@ -36,12 +34,16 @@ func main() {
 			log.Fatal("Invalid replicaof argument", err)
 		}
 
-		configBuilder.WithRole(config.RoleModeSlave).
-			WithMasterHost(masterHost).
-			WithMasterPort(masterPort)
+		cfg.Replication.Role = config.RoleModeSlave
+		cfg.Replication.MasterHost = masterHost
+		cfg.Replication.MasterPort = masterPort
+	} else {
+		cfg.Replication.Role = config.RoleModeMaster
+		cfg.Replication.MasterReplID = config.RandomID(40)
+		cfg.Replication.MasterReplOffset = 0
 	}
 
-	s := server.NewServer(configBuilder.Build())
+	s := server.NewServer(cfg)
 
 	s.AddCommand("PING", commands.Ping)
 	s.AddCommand("ECHO", commands.Echo)
@@ -49,6 +51,8 @@ func main() {
 	s.AddCommand("GET", commands.Get)
 	s.AddCommand("DEL", commands.Del)
 	s.AddCommand("INFO", commands.Info)
+	s.AddCommand("REPLCONF", commands.ReplConf)
+	s.AddCommand("PSYNC", commands.PSync)
 
 	s.Start()
 }
