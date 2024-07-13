@@ -182,7 +182,8 @@ func Del(ctx *server.Context) {
 func Info(ctx *server.Context) {
 	b := strings.Builder{}
 
-	sections := []string{}
+	outputServer := ctx.Args == 0
+	outputReplication := ctx.Args == 0
 
 	for range ctx.Args {
 		ctx.Parser.NextType()
@@ -194,25 +195,20 @@ func Info(ctx *server.Context) {
 			return
 		}
 
-		sections = append(sections, section)
+		switch strings.ToLower(section) {
+		case "server":
+			outputServer = true
+		case "replication":
+			outputReplication = true
+		}
 	}
 
-	for _, s := range ctx.Config.Sections {
-		match := false
+	if outputServer {
+		b.WriteString(ctx.Config.Server.String())
+	}
 
-		if ctx.Args > 0 {
-			for _, section := range sections {
-				if s.Matches(section) {
-					match = true
-					break
-				}
-			}
-		}
-
-		if ctx.Args == 0 || match {
-			b.WriteString(s.String())
-			b.WriteByte('\n')
-		}
+	if outputReplication {
+		b.WriteString(ctx.Config.Replication.String())
 	}
 
 	info := resp.NewBulkString(b.String())

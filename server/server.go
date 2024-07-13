@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/a7medev/goredis/config"
 	"github.com/a7medev/goredis/resp"
 	"github.com/a7medev/goredis/storage"
 )
@@ -17,73 +18,14 @@ const BufferSize = 4096
 type CommandHandler func(ctx *Context)
 
 type Context struct {
-	Config *Config
+	Config *config.Config
 	Conn   net.Conn
 	DB     *storage.Database
 	Parser *resp.Parser
 	Args   int
 }
 
-type Config struct {
-	Sections []*ConfigSection
-}
-
-type ConfigSection struct {
-	Name    string
-	Entries []ConfigEntry
-}
-
-type ConfigEntry struct {
-	Name  string
-	Value string // TODO: Allow different types of values
-}
-
-func (c *Config) Section(name string) *ConfigSection {
-	for _, s := range c.Sections {
-		if s.Matches(name) {
-			return s
-		}
-	}
-
-	return nil
-}
-
-func (s *ConfigSection) Matches(name string) bool {
-	return strings.ToUpper(s.Name) == strings.ToUpper(name)
-}
-
-func (s *ConfigSection) String() string {
-	b := strings.Builder{}
-
-	b.WriteString("# ")
-	b.WriteString(s.Name)
-	b.WriteByte('\n')
-
-	for _, e := range s.Entries {
-		b.WriteString(e.Name)
-		b.WriteByte(':')
-		b.WriteString(e.Value)
-		b.WriteByte('\n')
-	}
-
-	return b.String()
-}
-
-func NewConfig() *Config {
-	replication := &ConfigSection{
-		Name: "Replication",
-		Entries: []ConfigEntry{
-			{"role", "master"},
-			{"master_host", "localhost"},
-		},
-	}
-
-	return &Config{
-		Sections: []*ConfigSection{replication},
-	}
-}
-
-func NewContext(config *Config, conn net.Conn, db *storage.Database, parser *resp.Parser, args int) *Context {
+func NewContext(config *config.Config, conn net.Conn, db *storage.Database, parser *resp.Parser, args int) *Context {
 	return &Context{
 		Config: config,
 		Conn:   conn,
@@ -103,28 +45,27 @@ func (c *Context) Reply(reply resp.Encodable) error {
 
 type Server struct {
 	Listener net.Listener
-	Address  string
+	Config   *config.Config
 	commands map[string]CommandHandler
 }
 
-func NewServer(address string) *Server {
+func NewServer(cfg *config.Config) *Server {
 	return &Server{
-		Address:  address,
+		Config:   cfg,
 		commands: make(map[string]CommandHandler),
 	}
 }
 
 // TODO: make the server exit gracefully.
 func (s *Server) Start() {
-	config := NewConfig()
-
-	ln, err := net.Listen("tcp", s.Address)
+	addr := fmt.Sprintf(":%v", s.Config.Server.Port)
+	ln, err := net.Listen("tcp", addr)
 
 	if err != nil {
-		log.Fatalln("Failed to bind to listen on address", s.Address)
+		log.Fatalln("Failed to bind to listen on address", addr)
 	}
 
-	fmt.Println("Listening on", s.Address)
+	fmt.Println("Listening on", addr)
 
 	s.Listener = ln
 
@@ -138,7 +79,7 @@ func (s *Server) Start() {
 			continue
 		}
 
-		go s.handleConn(config, conn, db)
+		go s.handleConn(s.Config, conn, db)
 	}
 }
 
@@ -146,7 +87,7 @@ func (s *Server) AddCommand(cmd string, handler CommandHandler) {
 	s.commands[cmd] = handler
 }
 
-func (s *Server) handleConn(config *Config, conn net.Conn, db *storage.Database) {
+func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Database) {
 	defer conn.Close()
 
 	fmt.Println("Connection from", conn.RemoteAddr())
