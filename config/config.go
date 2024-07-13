@@ -29,7 +29,7 @@ type ReplicationConfig struct {
 
 // entry converts a config entry to a string in the format used in the INFO command.
 func entry(name string, value any) string {
-	return fmt.Sprintf("%s: %v\n", name, value)
+	return fmt.Sprintf("%s:%v\n", name, value)
 }
 
 func (c *ServerConfig) String() string {
