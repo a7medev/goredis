@@ -99,19 +99,15 @@ func (s *Server) AddCommand(cmd string, handler CommandHandler) {
 func parseCommand(buf *bufio.Reader) (string, []string, error) {
 	p := resp.NewParser(buf)
 
-	p.NextType()
-	cmdLen, err := p.NextInteger()
+	cmdLen, err := p.NextArrayLength()
 
 	if err != nil {
-		fmt.Println("Error parsing command:", err.Error())
 		return "", nil, err
 	}
 
-	p.NextType()
 	cmd, err := p.NextBulkString()
 
 	if err != nil {
-		fmt.Println("Error parsing command:", err.Error())
 		return "", nil, err
 	}
 
@@ -121,11 +117,10 @@ func parseCommand(buf *bufio.Reader) (string, []string, error) {
 	args := make([]string, argsLen)
 
 	for i := range argsLen {
-		p.NextType()
 		arg, err := p.NextBulkString()
 
 		if err != nil {
-			fmt.Println("Error parsing argument:", err.Error())
+			return "", nil, err
 		}
 
 		args[i] = arg
@@ -198,7 +193,6 @@ func (s *Server) startReplication() {
 
 	buf := bufio.NewReader(conn)
 	p := resp.NewParser(buf)
-	p.NextType()
 
 	pong, err := p.NextSimpleString()
 
@@ -229,7 +223,6 @@ func (s *Server) startReplication() {
 		return
 	}
 
-	p.NextType()
 	ok, err := p.NextSimpleString()
 	if err != nil {
 		fmt.Println("Failed to parse result from master")
@@ -255,7 +248,6 @@ func (s *Server) startReplication() {
 		return
 	}
 
-	p.NextType()
 	ok, err = p.NextSimpleString()
 
 	if err != nil {
@@ -287,8 +279,6 @@ func (s *Server) startReplication() {
 	// TODO: Read PSYNC reply from master
 	// TODO: Read RDB from master and load it into the database
 	// Should do so after implementing RDB encoding/decoding.
-
-	p.NextType()
 
 	result, err := p.NextSimpleString()
 

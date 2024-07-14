@@ -16,48 +16,6 @@ func NewParser(data *bufio.Reader) *Parser {
 	return &Parser{data: data}
 }
 
-// TODO: is NextType needed? We can just embed that into Next* methods instead.
-func (p *Parser) NextType() (DataType, error) {
-	t, err := p.data.ReadByte()
-
-	if err != nil {
-		return 0, err
-	}
-
-	switch t {
-	case '+':
-		return SimpleStringType, nil
-	case '-':
-		return SimpleErrorType, nil
-	case ':':
-		return IntegerType, nil
-	case '$':
-		return BulkStringType, nil
-	case '*':
-		return ArrayType, nil
-	case '_':
-		return NullType, nil
-	case '#':
-		return BooleanType, nil
-	case ',':
-		return DoubleType, nil
-	case '(':
-		return BigNumberType, nil
-	case '!':
-		return BulkErrorType, nil
-	case '=':
-		return VerbatimStringType, nil
-	case '%':
-		return MapType, nil
-	case '~':
-		return SetType, nil
-	case '>':
-		return PushType, nil
-	default:
-		return 0, errors.New("invalid redis data type")
-	}
-}
-
 func (p *Parser) readUntilCRLF() (string, error) {
 	result, err := p.data.ReadString('\r')
 
@@ -72,11 +30,9 @@ func (p *Parser) readUntilCRLF() (string, error) {
 	return result[:end], nil
 }
 
-func (p *Parser) NextSimpleString() (string, error) {
-	return p.readUntilCRLF()
-}
-
-func (p *Parser) NextInteger() (int, error) {
+// readInteger parses the next integer from the buffer and returns it.
+// It differs from NextInteger in that it doesn't read the type byte.
+func (p *Parser) readInteger() (int, error) {
 	result, err := p.readUntilCRLF()
 
 	if err != nil {
@@ -92,8 +48,46 @@ func (p *Parser) NextInteger() (int, error) {
 	return n, nil
 }
 
+func (p *Parser) NextInteger() (int, error) {
+	t, err := p.data.ReadByte()
+
+	if err != nil {
+		return 0, err
+	}
+
+	if t != ':' {
+		return 0, errors.New("invalid integer type")
+	}
+
+	return p.readInteger()
+}
+
+func (p *Parser) NextSimpleString() (string, error) {
+	t, err := p.data.ReadByte()
+
+	if err != nil {
+		return "", err
+	}
+
+	if t != '+' {
+		return "", errors.New("invalid simple string type")
+	}
+
+	return p.readUntilCRLF()
+}
+
 func (p *Parser) NextBulkString() (string, error) {
-	length, err := p.NextInteger()
+	t, err := p.data.ReadByte()
+
+	if err != nil {
+		return "", err
+	}
+
+	if t != '$' {
+		return "", errors.New("invalid bulk string type")
+	}
+
+	length, err := p.readInteger()
 
 	if err != nil {
 		return "", err
@@ -118,4 +112,28 @@ func (p *Parser) NextBulkString() (string, error) {
 	p.data.Discard(2)
 
 	return string(result), nil
+}
+
+func (p *Parser) NextArrayLength() (int, error) {
+	t, err := p.data.ReadByte()
+
+	if err != nil {
+		return 0, err
+	}
+
+	if t != '*' {
+		return 0, errors.New("invalid array type")
+	}
+
+	length, err := p.readInteger()
+
+	if err != nil {
+		return 0, err
+	}
+
+	if length == -1 {
+		return 0, ErrNull
+	}
+
+	return length, nil
 }
