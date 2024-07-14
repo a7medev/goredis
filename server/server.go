@@ -58,6 +58,8 @@ func NewServer(cfg *config.Config) *Server {
 
 // TODO: make the server exit gracefully.
 func (s *Server) Start() {
+	s.Config.Mu.RLock()
+
 	addr := fmt.Sprintf(":%v", s.Config.Server.Port)
 	ln, err := net.Listen("tcp", addr)
 
@@ -74,6 +76,8 @@ func (s *Server) Start() {
 	if s.Config.Replication.Role == config.RoleModeSlave {
 		go s.startReplication()
 	}
+
+	s.Config.Mu.RUnlock()
 
 	for {
 		conn, err := s.Listener.Accept()
@@ -145,7 +149,14 @@ func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Da
 	}
 }
 
+// startReplication connects to the master server and starts the replication process.
+// It sends the PING command to the master server to check if it's alive.
+// It then sends the REPLCONF listening-port <port> and REPLCONF capa eof capa psync2 commands.
 func (s *Server) startReplication() {
+	s.Config.Mu.Lock()
+	defer s.Config.Mu.Unlock()
+
+	// Connect to master
 	addr := fmt.Sprintf("%v:%v", s.Config.Replication.MasterHost, s.Config.Replication.MasterPort)
 	conn, err := net.Dial("tcp", addr)
 
@@ -282,15 +293,53 @@ func (s *Server) startReplication() {
 	// TODO: Read RDB from master and load it into the database
 	// Should do so after implementing RDB encoding/decoding.
 
-	// n, err = conn.Read(buf)
+	n, err = conn.Read(buf)
 
-	// if err != nil {
-	// 	fmt.Println("Failed to read from master")
-	// 	return
-	// }
+	if err != nil {
+		fmt.Println("Failed to read from master")
+		return
+	}
 
-	// p = resp.NewParser(buf, n)
-	// p.NextType()
+	p = resp.NewParser(buf, n)
+	p.NextType()
 
-	// _, err = p.NextSimpleString()
+	result, err := p.NextSimpleString()
+
+	if err != nil {
+		fmt.Println("Failed to parse PSYNC result from master")
+		return
+	}
+
+	fmt.Println("Master replied with", result)
+
+	syncArgs := strings.Split(result, " ")
+
+	if syncArgs[0] == "FULLRESYNC" {
+		fmt.Println("Master requested a full sync")
+
+		replId := syncArgs[1]
+		offset, err := strconv.Atoi(syncArgs[2])
+
+		if err != nil {
+			fmt.Println("Failed to parse offset from master")
+			return
+		}
+
+		fmt.Println("Master replId:", replId, "offset:", offset)
+
+		s.Config.Replication.MasterReplID = replId
+		s.Config.Replication.MasterReplOffset = offset
+
+		// Read RDB file from server
+		// TODO: update the server configuration with the RDB file.
+		// TODO: Adjust the buffer size as well to account for larger RDB files if needed.
+		_, err = conn.Read(buf)
+
+		if err != nil {
+			fmt.Println("Failed to read RDB from master")
+			return
+		}
+
+		fmt.Println("Received RDB from master")
+	}
 }

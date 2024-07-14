@@ -205,6 +205,8 @@ func Info(ctx *server.Context) {
 		}
 	}
 
+	ctx.Config.Mu.RLock()
+
 	if outputServer {
 		b.WriteString(ctx.Config.Server.String())
 	}
@@ -212,6 +214,8 @@ func Info(ctx *server.Context) {
 	if outputReplication {
 		b.WriteString(ctx.Config.Replication.String())
 	}
+
+	ctx.Config.Mu.RUnlock()
 
 	info := resp.NewBulkString(b.String())
 	ctx.Reply(info)

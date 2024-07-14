@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync"
 )
 
 type Config struct {
 	Server      ServerConfig
 	Replication ReplicationConfig
+	Mu          *sync.RWMutex
 }
 
 type ServerConfig struct {
@@ -63,6 +65,7 @@ func (c *ReplicationConfig) String() string {
 
 func NewConfig(port uint) *Config {
 	return &Config{
+		Mu:     new(sync.RWMutex),
 		Server: ServerConfig{Port: port},
 		Replication: ReplicationConfig{
 			Role:             RoleModeMaster,
