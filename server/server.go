@@ -94,6 +94,46 @@ func (s *Server) AddCommand(cmd string, handler CommandHandler) {
 	s.commands[cmd] = handler
 }
 
+// parseCommand parses the recieved Redis command from the client.
+// It reads the command, arguments, and the error if any.
+func parseCommand(buf *bufio.Reader) (string, []string, error) {
+	p := resp.NewParser(buf)
+
+	p.NextType()
+	cmdLen, err := p.NextInteger()
+
+	if err != nil {
+		fmt.Println("Error parsing command:", err.Error())
+		return "", nil, err
+	}
+
+	p.NextType()
+	cmd, err := p.NextBulkString()
+
+	if err != nil {
+		fmt.Println("Error parsing command:", err.Error())
+		return "", nil, err
+	}
+
+	cmd = strings.ToUpper(cmd)
+
+	argsLen := cmdLen - 1
+	args := make([]string, argsLen)
+
+	for i := range argsLen {
+		p.NextType()
+		arg, err := p.NextBulkString()
+
+		if err != nil {
+			fmt.Println("Error parsing argument:", err.Error())
+		}
+
+		args[i] = arg
+	}
+
+	return cmd, args, nil
+}
+
 func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Database) {
 	defer conn.Close()
 
@@ -102,46 +142,22 @@ func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Da
 	buf := bufio.NewReader(conn)
 
 	for {
-		p := resp.NewParser(buf)
-
-		p.NextType()
-		cmdLen, err := p.NextInteger()
+		cmd, args, err := parseCommand(buf)
 
 		if err == io.EOF {
 			fmt.Println("Client closed connection")
 			return
 		}
 
-		if err != nil {
-			fmt.Println("Error parsing command:", err.Error())
-		}
-
-		p.NextType()
-		cmd, err := p.NextBulkString()
+		ctx := NewContext(config, conn, db, args)
 
 		if err != nil {
-			log.Fatalln("Error parsing command:", err.Error())
-		}
-
-		cmd = strings.ToUpper(cmd)
-
-		argsLen := cmdLen - 1
-		args := make([]string, argsLen)
-
-		for i := range argsLen {
-			p.NextType()
-			arg, err := p.NextBulkString()
-
-			if err != nil {
-				log.Fatalln("Error parsing argument:", err.Error())
-			}
-
-			args[i] = arg
+			ctx.Reply(resp.NewSimpleError("ERR failed to parse command"))
+			return
 		}
 
 		handler, ok := s.commands[cmd]
 
-		ctx := NewContext(config, conn, db, args)
 		if ok {
 			handler(ctx)
 		} else {
@@ -285,7 +301,10 @@ func (s *Server) startReplication() {
 
 	syncArgs := strings.Split(result, " ")
 
-	if syncArgs[0] == "FULLRESYNC" {
+	switch syncArgs[0] {
+	case "CONTINUE":
+		fmt.Println("Master replied with CONTINUE, partial sync will follow")
+	case "FULLRESYNC":
 		fmt.Println("Master requested a full sync")
 
 		replId := syncArgs[1]
@@ -312,5 +331,7 @@ func (s *Server) startReplication() {
 		// }
 
 		// fmt.Println("Received RDB from master")
+	default:
+		fmt.Println("Unknown PSYNC result from master")
 	}
 }
