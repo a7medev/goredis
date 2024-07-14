@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -100,28 +101,22 @@ func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Da
 
 	fmt.Println("Connection from", conn.RemoteAddr())
 
-	// TODO: Probably obtain buffer from a pool to reduce memory allocations.
-	buf := make([]byte, BufferSize)
+	buf := bufio.NewReader(conn)
+
 	for {
 		// TODO: Clients could send multiple commands in one go.
 		// We need to account for that by checking when we've read a full command if there's more data to read.
 		// The current behavior expects a single command in a single read operation which is not always correct.
-		n, err := conn.Read(buf)
 
-		if err == io.EOF {
-			fmt.Printf("Connection with %v closed.\n", conn.RemoteAddr())
-			break
-		}
-
-		if err != nil {
-			fmt.Printf("Error reading data from connection %v:%v\n", conn.RemoteAddr(), err.Error())
-			return
-		}
-
-		p := resp.NewParser(buf, n)
+		p := resp.NewParser(buf)
 
 		p.NextType()
 		cmdLen, err := p.NextInteger()
+
+		if err == io.EOF {
+			fmt.Println("Client closed connection")
+			return
+		}
 
 		if err != nil {
 			fmt.Println("Error parsing command:", err.Error())
@@ -142,7 +137,6 @@ func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Da
 		if ok {
 			handler(ctx)
 		} else {
-			fmt.Println("Unknown command", strconv.Quote(string(buf[:n])))
 			msg := fmt.Sprintf("ERR unknown command '%v'", cmd)
 			ctx.Reply(resp.NewSimpleError(msg))
 		}
@@ -178,15 +172,8 @@ func (s *Server) startReplication() {
 		return
 	}
 
-	buf := make([]byte, 256)
-	n, err := conn.Read(buf)
-
-	if err != nil {
-		fmt.Println("Failed to read from master")
-		return
-	}
-
-	p := resp.NewParser(buf, n)
+	buf := bufio.NewReader(conn)
+	p := resp.NewParser(buf)
 	p.NextType()
 
 	pong, err := p.NextSimpleString()
@@ -218,14 +205,6 @@ func (s *Server) startReplication() {
 		return
 	}
 
-	n, err = conn.Read(buf)
-
-	if err != nil {
-		fmt.Println("Failed to read from master")
-		return
-	}
-
-	p = resp.NewParser(buf, n)
 	p.NextType()
 	ok, err := p.NextSimpleString()
 	if err != nil {
@@ -252,14 +231,6 @@ func (s *Server) startReplication() {
 		return
 	}
 
-	n, err = conn.Read(buf)
-
-	if err != nil {
-		fmt.Println("Failed to read from master")
-		return
-	}
-
-	p = resp.NewParser(buf, n)
 	p.NextType()
 	ok, err = p.NextSimpleString()
 
@@ -293,14 +264,6 @@ func (s *Server) startReplication() {
 	// TODO: Read RDB from master and load it into the database
 	// Should do so after implementing RDB encoding/decoding.
 
-	n, err = conn.Read(buf)
-
-	if err != nil {
-		fmt.Println("Failed to read from master")
-		return
-	}
-
-	p = resp.NewParser(buf, n)
 	p.NextType()
 
 	result, err := p.NextSimpleString()
@@ -333,13 +296,13 @@ func (s *Server) startReplication() {
 		// Read RDB file from server
 		// TODO: update the server configuration with the RDB file.
 		// TODO: Adjust the buffer size as well to account for larger RDB files if needed.
-		_, err = conn.Read(buf)
+		// _, err = conn.Read(buf)
 
-		if err != nil {
-			fmt.Println("Failed to read RDB from master")
-			return
-		}
+		// if err != nil {
+		// 	fmt.Println("Failed to read RDB from master")
+		// 	return
+		// }
 
-		fmt.Println("Received RDB from master")
+		// fmt.Println("Received RDB from master")
 	}
 }

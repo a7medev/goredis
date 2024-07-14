@@ -227,8 +227,12 @@ func ReplConf(ctx *server.Context) {
 }
 
 func PSync(ctx *server.Context) {
+	ctx.Config.Mu.RLock()
+
 	replId := ctx.Config.Replication.MasterReplID
 	replOffset := ctx.Config.Replication.MasterReplOffset
+
+	ctx.Config.Mu.RUnlock()
 
 	result := fmt.Sprintf("FULLRESYNC %v %v", replId, replOffset)
 

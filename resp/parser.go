@@ -1,39 +1,28 @@
 package resp
 
 import (
+	"bufio"
 	"errors"
-	"fmt"
 	"strconv"
 )
 
 var ErrNull = errors.New("null")
 
 type Parser struct {
-	data []byte
-	pos  int
-	size int
+	data *bufio.Reader
 }
 
-func NewParser(data []byte, size int) *Parser {
-	return &Parser{
-		data: data,
-		size: size,
-		pos:  0,
-	}
+func NewParser(data *bufio.Reader) *Parser {
+	return &Parser{data: data}
 }
 
-func (p *Parser) Reset() {
-	p.pos = 0
-}
-
-func (p *Parser) SetPos(pos int) {
-	p.pos = pos
-}
-
+// TODO: is NextType needed? We can just embed that into Next* methods instead.
 func (p *Parser) NextType() (DataType, error) {
-	t := p.data[p.pos]
+	t, err := p.data.ReadByte()
 
-	p.pos++
+	if err != nil {
+		return 0, err
+	}
 
 	switch t {
 	case '+':
@@ -69,44 +58,38 @@ func (p *Parser) NextType() (DataType, error) {
 	}
 }
 
-func (p *Parser) isCRLF(i int) bool {
-	return p.data[i] == '\r' && p.data[i+1] == '\n'
+func (p *Parser) readUntilCRLF() (string, error) {
+	result, err := p.data.ReadString('\r')
+
+	if err != nil {
+		return "", err
+	}
+
+	// Skip the \n
+	p.data.Discard(1)
+
+	end := len(result) - 1
+	return result[:end], nil
 }
 
 func (p *Parser) NextSimpleString() (string, error) {
-	for i := p.pos; i < p.size; i++ {
-		if p.isCRLF(i) {
-			result := string(p.data[p.pos:i])
-			// Skip the \r\n
-			p.pos = i + 2
-			return result, nil
-		}
-	}
-
-	return "", errors.New("invalid simple string")
-}
-
-func (p *Parser) Debug() {
-	fmt.Println("Data: ", strconv.Quote(string(p.data[:p.size])))
-	fmt.Println("Pos: ", p.pos)
+	return p.readUntilCRLF()
 }
 
 func (p *Parser) NextInteger() (int, error) {
-	for i := p.pos; i < p.size; i++ {
-		if p.isCRLF(i) {
-			n, err := strconv.Atoi(string(p.data[p.pos:i]))
+	result, err := p.readUntilCRLF()
 
-			if err != nil {
-				return 0, err
-			}
-
-			p.pos = i + 2
-
-			return n, nil
-		}
+	if err != nil {
+		return 0, err
 	}
 
-	return 0, errors.New("invalid integer")
+	n, err := strconv.Atoi(result)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return n, nil
 }
 
 func (p *Parser) NextBulkString() (string, error) {
@@ -120,10 +103,19 @@ func (p *Parser) NextBulkString() (string, error) {
 		return "", ErrNull
 	}
 
-	result := string(p.data[p.pos : p.pos+length])
+	result := make([]byte, length)
+	n, err := p.data.Read(result)
+
+	if err != nil {
+		return "", err
+	}
+
+	if n != length {
+		return "", errors.New("failed to read bulk string")
+	}
 
 	// Skip the \r\n
-	p.pos = p.pos + length + 2
+	p.data.Discard(2)
 
-	return result, nil
+	return string(result), nil
 }
