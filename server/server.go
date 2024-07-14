@@ -22,16 +22,14 @@ type Context struct {
 	Config *config.Config
 	Conn   net.Conn
 	DB     *storage.Database
-	Parser *resp.Parser
-	Args   int
+	Args   []string
 }
 
-func NewContext(config *config.Config, conn net.Conn, db *storage.Database, parser *resp.Parser, args int) *Context {
+func NewContext(config *config.Config, conn net.Conn, db *storage.Database, args []string) *Context {
 	return &Context{
 		Config: config,
 		Conn:   conn,
 		DB:     db,
-		Parser: parser,
 		Args:   args,
 	}
 }
@@ -104,10 +102,6 @@ func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Da
 	buf := bufio.NewReader(conn)
 
 	for {
-		// TODO: Clients could send multiple commands in one go.
-		// We need to account for that by checking when we've read a full command if there's more data to read.
-		// The current behavior expects a single command in a single read operation which is not always correct.
-
 		p := resp.NewParser(buf)
 
 		p.NextType()
@@ -131,9 +125,23 @@ func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Da
 
 		cmd = strings.ToUpper(cmd)
 
+		argsLen := cmdLen - 1
+		args := make([]string, argsLen)
+
+		for i := range argsLen {
+			p.NextType()
+			arg, err := p.NextBulkString()
+
+			if err != nil {
+				log.Fatalln("Error parsing argument:", err.Error())
+			}
+
+			args[i] = arg
+		}
+
 		handler, ok := s.commands[cmd]
 
-		ctx := NewContext(config, conn, db, p, cmdLen-1)
+		ctx := NewContext(config, conn, db, args)
 		if ok {
 			handler(ctx)
 		} else {

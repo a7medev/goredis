@@ -13,42 +13,40 @@ import (
 )
 
 func Ping(ctx *server.Context) {
-	pong := resp.NewSimpleString("PONG")
-	ctx.Reply(pong)
-}
-
-func Echo(ctx *server.Context) {
-	ctx.Parser.NextType()
-	msg, err := ctx.Parser.NextBulkString()
-
-	if err != nil {
-		fmt.Println("Error parsing command:", err.Error())
+	if len(ctx.Args) > 1 {
+		ctx.Reply(resp.NewSimpleError("ERR wrong number of arguments for 'ping' command"))
 		return
 	}
 
+	if len(ctx.Args) == 1 {
+		msg := resp.NewBulkString(ctx.Args[0])
+		ctx.Reply(msg)
+	} else {
+		pong := resp.NewSimpleString("PONG")
+		ctx.Reply(pong)
+	}
+}
+
+func Echo(ctx *server.Context) {
+	if len(ctx.Args) != 1 {
+		ctx.Reply(resp.NewSimpleError("ERR wrong number of arguments for 'echo' command"))
+		return
+	}
+
+	msg := ctx.Args[0]
 	result := resp.NewBulkString(msg)
 
 	ctx.Reply(result)
 }
 
 func Set(ctx *server.Context) {
-	ctx.Parser.NextType()
-	key, err := ctx.Parser.NextBulkString()
-
-	if err != nil {
-		fmt.Println("Error parsing key:", err.Error())
-		ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+	if len(ctx.Args) < 2 {
+		ctx.Reply(resp.NewSimpleError("ERR wrong number of arguments for 'set' command"))
 		return
 	}
 
-	ctx.Parser.NextType()
-	value, err := ctx.Parser.NextBulkString()
-
-	if err != nil {
-		fmt.Println("Error parsing value:", err.Error())
-		ctx.Reply(resp.NewSimpleError("ERR syntax error"))
-		return
-	}
+	key := ctx.Args[0]
+	value := ctx.Args[1]
 
 	expiry := storage.NeverExpires
 	mode := storage.SetDefault
@@ -56,17 +54,8 @@ func Set(ctx *server.Context) {
 	keepTTL := false
 
 	// Parse extra arguments to SET
-	for ctx.Args > 2 {
-		ctx.Parser.NextType()
-		arg, err := ctx.Parser.NextBulkString()
-
-		if err != nil {
-			fmt.Println("Error parsing argument:", err.Error())
-			ctx.Reply(resp.NewSimpleError("ERR syntax error"))
-			return
-		}
-
-		arg = strings.ToUpper(arg)
+	for i := 2; i < len(ctx.Args); i++ {
+		arg := strings.ToUpper(ctx.Args[i])
 
 		switch arg {
 		case "NX":
@@ -90,18 +79,15 @@ func Set(ctx *server.Context) {
 			get = true
 
 		case "EX", "PX", "EXAT", "PXAT":
-			ctx.Parser.NextType()
-			timeStr, err := ctx.Parser.NextBulkString()
-
-			ctx.Args--
-
-			if err != nil {
-				fmt.Println("Error parsing expiry:", err.Error())
+			if i+1 >= len(ctx.Args) {
+				fmt.Println("Error parsing argument: Missing expiry time")
 				ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 				return
 			}
 
-			t, err := strconv.ParseInt(timeStr, 10, 64)
+			t, err := strconv.ParseInt(ctx.Args[i+1], 10, 64)
+
+			i++
 
 			if err != nil || t <= 0 {
 				if err != nil {
@@ -121,8 +107,6 @@ func Set(ctx *server.Context) {
 			ctx.Reply(resp.NewSimpleError("ERR syntax error"))
 			return
 		}
-
-		ctx.Args--
 	}
 
 	result, exists, isSet := ctx.DB.Set(key, value, expiry, mode, keepTTL, get)
@@ -139,14 +123,12 @@ func Set(ctx *server.Context) {
 }
 
 func Get(ctx *server.Context) {
-	ctx.Parser.NextType()
-	key, err := ctx.Parser.NextBulkString()
-
-	if err != nil {
-		fmt.Println("Error parsing key: ", err.Error())
+	if len(ctx.Args) != 1 {
+		ctx.Reply(resp.NewSimpleError("ERR wrong number of arguments for 'get' command"))
 		return
 	}
 
+	key := ctx.Args[0]
 	value, ok := ctx.DB.Get(key)
 
 	if !ok {
@@ -163,16 +145,7 @@ func Get(ctx *server.Context) {
 func Del(ctx *server.Context) {
 	deleted := 0
 
-	for i := 0; i < ctx.Args; i++ {
-		ctx.Parser.NextType()
-		key, err := ctx.Parser.NextBulkString()
-
-		if err != nil {
-			fmt.Println("Error parsing key: ", err.Error())
-			ctx.Reply(resp.NewSimpleError("ERR syntax error"))
-			return
-		}
-
+	for _, key := range ctx.Args {
 		if ok := ctx.DB.Delete(key); ok {
 			deleted++
 		}
@@ -184,19 +157,10 @@ func Del(ctx *server.Context) {
 func Info(ctx *server.Context) {
 	b := strings.Builder{}
 
-	outputServer := ctx.Args == 0
-	outputReplication := ctx.Args == 0
+	outputServer := len(ctx.Args) == 0
+	outputReplication := len(ctx.Args) == 0
 
-	for range ctx.Args {
-		ctx.Parser.NextType()
-		section, err := ctx.Parser.NextBulkString()
-
-		if err != nil {
-			fmt.Println("Error parsing section: ", err.Error())
-			ctx.Reply(resp.NewSimpleError("ERR syntax error"))
-			return
-		}
-
+	for _, section := range ctx.Args {
 		switch strings.ToLower(section) {
 		case "server":
 			outputServer = true
