@@ -89,3 +89,7 @@ func (a *Array) Encode() string {
 	}
 	return str
 }
+
+func (a *Array) Append(value Encodable) {
+	a.Values = append(a.Values, value)
+}
