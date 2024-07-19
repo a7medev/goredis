@@ -13,6 +13,10 @@ import (
 )
 
 func Ping(ctx *server.Context) {
+	if ctx.FromMaster {
+		return
+	}
+
 	if len(ctx.Args) > 1 {
 		ctx.Reply(resp.NewSimpleError("ERR wrong number of arguments for 'ping' command"))
 		return
@@ -28,6 +32,10 @@ func Ping(ctx *server.Context) {
 }
 
 func Echo(ctx *server.Context) {
+	if ctx.FromMaster {
+		return
+	}
+
 	if len(ctx.Args) != 1 {
 		ctx.Reply(resp.NewSimpleError("ERR wrong number of arguments for 'echo' command"))
 		return
@@ -111,6 +119,10 @@ func Set(ctx *server.Context) {
 
 	result, exists, isSet := ctx.DB.Set(key, value, expiry, mode, keepTTL, get)
 
+	if ctx.FromMaster {
+		return
+	}
+
 	if get && exists {
 		ctx.Reply(resp.NewBulkString(result))
 	} else if get && !exists {
@@ -123,6 +135,10 @@ func Set(ctx *server.Context) {
 }
 
 func Get(ctx *server.Context) {
+	if ctx.FromMaster {
+		return
+	}
+
 	if len(ctx.Args) != 1 {
 		ctx.Reply(resp.NewSimpleError("ERR wrong number of arguments for 'get' command"))
 		return
@@ -151,10 +167,18 @@ func Del(ctx *server.Context) {
 		}
 	}
 
+	if ctx.FromMaster {
+		return
+	}
+
 	ctx.Reply(resp.NewInteger(deleted))
 }
 
 func Info(ctx *server.Context) {
+	if ctx.FromMaster {
+		return
+	}
+
 	b := strings.Builder{}
 
 	outputServer := len(ctx.Args) == 0
@@ -186,11 +210,19 @@ func Info(ctx *server.Context) {
 }
 
 func ReplConf(ctx *server.Context) {
+	if ctx.FromMaster {
+		return
+	}
+
 	// TODO: handle REPLCONF arguments
 	ctx.Reply(resp.NewSimpleString("OK"))
 }
 
 func PSync(ctx *server.Context) {
+	if ctx.FromMaster {
+		return
+	}
+
 	ctx.Config.Mu.RLock()
 
 	replId := ctx.Config.Replication.MasterReplID

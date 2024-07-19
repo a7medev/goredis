@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"strconv"
 	"strings"
 
 	"github.com/a7medev/goredis/config"
@@ -26,9 +25,11 @@ type Context struct {
 
 	Command string
 	Args    []string
+
+	FromMaster bool
 }
 
-func (s *Server) newContext(conn Conn, command string, args []string) *Context {
+func (s *Server) newContext(conn Conn, command string, args []string, fromMaster bool) *Context {
 	return &Context{
 		Conn:    conn,
 		Config:  s.config,
@@ -126,6 +127,16 @@ func parseCommand(buf *bufio.Reader) (string, []string, error) {
 	return cmd, args, nil
 }
 
+func createCommand(cmd string, args ...string) *resp.Array {
+	arr := resp.NewArray(resp.NewBulkString(cmd))
+
+	for _, arg := range args {
+		arr.Append(resp.NewBulkString(arg))
+	}
+
+	return arr
+}
+
 func (s *Server) handleConn(conn Conn) {
 	defer conn.Close()
 
@@ -141,7 +152,7 @@ func (s *Server) handleConn(conn Conn) {
 			return
 		}
 
-		ctx := s.newContext(conn, cmd, args)
+		ctx := s.newContext(conn, cmd, args, false)
 
 		if err != nil {
 			ctx.Reply(resp.NewSimpleError("ERR failed to parse command"))
@@ -156,169 +167,5 @@ func (s *Server) handleConn(conn Conn) {
 			msg := fmt.Sprintf("ERR unknown command '%v'", cmd)
 			ctx.Reply(resp.NewSimpleError(msg))
 		}
-	}
-}
-
-// startReplication connects to the master server and starts the replication process.
-// It sends the PING command to the master server to check if it's alive.
-// It then sends the REPLCONF listening-port <port> and REPLCONF capa eof capa psync2 commands.
-func (s *Server) startReplication() {
-	s.config.Mu.Lock()
-	defer s.config.Mu.Unlock()
-
-	// Connect to master
-	addr := fmt.Sprintf("%v:%v", s.config.Replication.MasterHost, s.config.Replication.MasterPort)
-	conn, err := net.Dial("tcp", addr)
-
-	if err != nil {
-		fmt.Println("Failed to connect to master", addr)
-		return
-	}
-
-	defer conn.Close()
-
-	fmt.Println("Connected to master", addr)
-
-	// PING master
-	ping := resp.NewArray(resp.NewBulkString("PING"))
-	_, err = conn.Write([]byte(ping.Encode()))
-
-	if err != nil {
-		fmt.Println("Failed to PING master")
-		return
-	}
-
-	buf := bufio.NewReader(conn)
-	p := resp.NewParser(buf)
-
-	pong, err := p.NextSimpleString()
-
-	if err != nil {
-		fmt.Println("Failed to parse PONG from master")
-		return
-	}
-
-	if pong != "PONG" {
-		fmt.Println("Master didn't reply with PONG but rather with", pong)
-		return
-	}
-
-	fmt.Println("Master replied with PONG, starting replication")
-
-	// REPLCONF listening-port <port>
-	// REPLCONF capa eof capa psync2
-
-	replconf := resp.NewBulkString("REPLCONF")
-	listiningPort := resp.NewBulkString("listening-port")
-	port := resp.NewBulkString(strconv.Itoa(int(s.config.Server.Port)))
-	cmd := resp.NewArray(replconf, listiningPort, port)
-
-	_, err = conn.Write([]byte(cmd.Encode()))
-
-	if err != nil {
-		fmt.Println("Failed to send REPLCONF listening-port to master")
-		return
-	}
-
-	ok, err := p.NextSimpleString()
-	if err != nil {
-		fmt.Println("Failed to parse result from master")
-		return
-	}
-
-	if ok != "OK" {
-		fmt.Println("Master didn't reply with OK but rather with", ok)
-		return
-	}
-
-	fmt.Println("Master replied with OK to REPLCONF listening-port")
-
-	capa := resp.NewBulkString("capa")
-	eof := resp.NewBulkString("eof")
-	psync2 := resp.NewBulkString("psync2")
-	cmd = resp.NewArray(replconf, capa, eof, capa, psync2)
-
-	_, err = conn.Write([]byte(cmd.Encode()))
-
-	if err != nil {
-		fmt.Println("Failed to send REPLCONF capa psync2 to master")
-		return
-	}
-
-	ok, err = p.NextSimpleString()
-
-	if err != nil {
-		fmt.Println("Failed to parse result from master")
-		return
-	}
-
-	if ok != "OK" {
-		fmt.Println("Master didn't reply with OK but rather with", ok)
-		return
-	}
-
-	fmt.Println("Master replied with OK to REPLCONF capa psync2")
-
-	// PSYNC <replicationId> <offset>
-
-	psync := resp.NewBulkString("PSYNC")
-	replId := resp.NewBulkString(s.config.Replication.MasterReplID)
-	offset := resp.NewBulkString(strconv.Itoa(s.config.Replication.MasterReplOffset))
-	cmd = resp.NewArray(psync, replId, offset)
-
-	_, err = conn.Write([]byte(cmd.Encode()))
-
-	if err != nil {
-		fmt.Println("Failed to send PSYNC to master")
-		return
-	}
-
-	// TODO: Read PSYNC reply from master
-	// TODO: Read RDB from master and load it into the database
-	// Should do so after implementing RDB encoding/decoding.
-
-	result, err := p.NextSimpleString()
-
-	if err != nil {
-		fmt.Println("Failed to parse PSYNC result from master")
-		return
-	}
-
-	fmt.Println("Master replied with", result)
-
-	syncArgs := strings.Split(result, " ")
-
-	switch syncArgs[0] {
-	case "CONTINUE":
-		fmt.Println("Master replied with CONTINUE, partial sync will follow")
-	case "FULLRESYNC":
-		fmt.Println("Master requested a full sync")
-
-		replId := syncArgs[1]
-		offset, err := strconv.Atoi(syncArgs[2])
-
-		if err != nil {
-			fmt.Println("Failed to parse offset from master")
-			return
-		}
-
-		fmt.Println("Master replId:", replId, "offset:", offset)
-
-		s.config.Replication.MasterReplID = replId
-		s.config.Replication.MasterReplOffset = offset
-
-		// Read RDB file from server
-		// TODO: update the server configuration with the RDB file.
-		// TODO: Adjust the buffer size as well to account for larger RDB files if needed.
-		// _, err = conn.Read(buf)
-
-		// if err != nil {
-		// 	fmt.Println("Failed to read RDB from master")
-		// 	return
-		// }
-
-		// fmt.Println("Received RDB from master")
-	default:
-		fmt.Println("Unknown PSYNC result from master")
 	}
 }
