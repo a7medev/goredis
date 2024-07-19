@@ -19,18 +19,20 @@ const BufferSize = 4096
 type CommandHandler func(ctx *Context)
 
 type Context struct {
-	Config *config.Config
-	Conn   net.Conn
-	DB     *storage.Database
-	Args   []string
+	Config  *config.Config
+	Conn    net.Conn
+	DB      *storage.Database
+	Command string
+	Args    []string
 }
 
-func NewContext(config *config.Config, conn net.Conn, db *storage.Database, args []string) *Context {
+func newContext(config *config.Config, conn net.Conn, db *storage.Database, command string, args []string) *Context {
 	return &Context{
-		Config: config,
-		Conn:   conn,
-		DB:     db,
-		Args:   args,
+		Config:  config,
+		Conn:    conn,
+		DB:      db,
+		Command: command,
+		Args:    args,
 	}
 }
 
@@ -86,7 +88,7 @@ func (s *Server) Start() {
 			continue
 		}
 
-		go s.handleConn(s.Config, conn, db)
+		go s.handleConn(conn, db)
 	}
 }
 
@@ -129,7 +131,7 @@ func parseCommand(buf *bufio.Reader) (string, []string, error) {
 	return cmd, args, nil
 }
 
-func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Database) {
+func (s *Server) handleConn(conn net.Conn, db *storage.Database) {
 	defer conn.Close()
 
 	fmt.Println("Connection from", conn.RemoteAddr())
@@ -140,11 +142,11 @@ func (s *Server) handleConn(config *config.Config, conn net.Conn, db *storage.Da
 		cmd, args, err := parseCommand(buf)
 
 		if err == io.EOF {
-			fmt.Println("Client closed connection")
+			fmt.Println("Client closed connection", conn.RemoteAddr())
 			return
 		}
 
-		ctx := NewContext(config, conn, db, args)
+		ctx := newContext(s.Config, conn, db, cmd, args)
 
 		if err != nil {
 			ctx.Reply(resp.NewSimpleError("ERR failed to parse command"))
