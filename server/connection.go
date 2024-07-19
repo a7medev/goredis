@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"net"
+	"sync"
 
 	"github.com/a7medev/goredis/resp"
 )
@@ -15,7 +16,9 @@ type Conn interface {
 }
 
 type NetConn struct {
-	conn net.Conn
+	conn    net.Conn
+	buf     *bufio.Reader
+	bufOnce sync.Once
 }
 
 func NewNetConn(conn net.Conn) *NetConn {
@@ -31,7 +34,11 @@ func (c *NetConn) Reply(reply resp.Encodable) error {
 }
 
 func (c *NetConn) Reader() *bufio.Reader {
-	return bufio.NewReader(c.conn)
+	c.bufOnce.Do(func() {
+		c.buf = bufio.NewReader(c.conn)
+	})
+
+	return c.buf
 }
 
 func (c *NetConn) Close() error {
