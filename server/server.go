@@ -19,76 +19,71 @@ const BufferSize = 4096
 type CommandHandler func(ctx *Context)
 
 type Context struct {
-	Config  *config.Config
-	Conn    net.Conn
-	DB      *storage.Database
+	Conn
+
+	Config *config.Config
+	DB     *storage.Database
+
 	Command string
 	Args    []string
 }
 
-func newContext(config *config.Config, conn net.Conn, db *storage.Database, command string, args []string) *Context {
+func (s *Server) newContext(conn Conn, command string, args []string) *Context {
 	return &Context{
-		Config:  config,
 		Conn:    conn,
-		DB:      db,
+		Config:  s.config,
+		DB:      s.db,
 		Command: command,
 		Args:    args,
 	}
 }
 
-func (c *Context) Reply(reply resp.Encodable) error {
-	s := strings.NewReader(reply.Encode())
-
-	_, err := io.Copy(c.Conn, s)
-
-	return err
-}
-
 type Server struct {
-	Listener net.Listener
-	Config   *config.Config
+	listener net.Listener
+	config   *config.Config
+	db       *storage.Database
 	commands map[string]CommandHandler
 }
 
 func NewServer(cfg *config.Config) *Server {
 	return &Server{
-		Config:   cfg,
+		config:   cfg,
 		commands: make(map[string]CommandHandler),
 	}
 }
 
 // TODO: make the server exit gracefully.
 func (s *Server) Start() {
-	s.Config.Mu.RLock()
+	s.config.Mu.RLock()
 
-	addr := fmt.Sprintf(":%v", s.Config.Server.Port)
+	addr := fmt.Sprintf(":%v", s.config.Server.Port)
 	ln, err := net.Listen("tcp", addr)
 
 	if err != nil {
-		log.Fatalln("Failed to bind to listen on address", addr)
+		log.Fatalln("Failed to listen on address", addr)
 	}
 
 	fmt.Println("Listening on", addr)
 
-	s.Listener = ln
+	s.listener = ln
 
-	db := storage.NewDatabase()
+	s.db = storage.NewDatabase()
 
-	if s.Config.Replication.Role == config.RoleModeSlave {
+	if s.config.Replication.Role == config.RoleModeSlave {
 		go s.startReplication()
 	}
 
-	s.Config.Mu.RUnlock()
+	s.config.Mu.RUnlock()
 
 	for {
-		conn, err := s.Listener.Accept()
+		conn, err := s.listener.Accept()
 
 		if err != nil {
 			log.Printf("Error accepting connection %v: %v\n", conn.RemoteAddr(), err.Error())
 			continue
 		}
 
-		go s.handleConn(conn, db)
+		go s.handleConn(NewNetConn(conn))
 	}
 }
 
@@ -131,22 +126,22 @@ func parseCommand(buf *bufio.Reader) (string, []string, error) {
 	return cmd, args, nil
 }
 
-func (s *Server) handleConn(conn net.Conn, db *storage.Database) {
+func (s *Server) handleConn(conn Conn) {
 	defer conn.Close()
 
-	fmt.Println("Connection from", conn.RemoteAddr())
+	fmt.Println("Connection from", conn.Addr())
 
-	buf := bufio.NewReader(conn)
+	buf := conn.Reader()
 
 	for {
 		cmd, args, err := parseCommand(buf)
 
 		if err == io.EOF {
-			fmt.Println("Client closed connection", conn.RemoteAddr())
+			fmt.Println("Client closed connection", conn.Addr())
 			return
 		}
 
-		ctx := newContext(s.Config, conn, db, cmd, args)
+		ctx := s.newContext(conn, cmd, args)
 
 		if err != nil {
 			ctx.Reply(resp.NewSimpleError("ERR failed to parse command"))
@@ -168,11 +163,11 @@ func (s *Server) handleConn(conn net.Conn, db *storage.Database) {
 // It sends the PING command to the master server to check if it's alive.
 // It then sends the REPLCONF listening-port <port> and REPLCONF capa eof capa psync2 commands.
 func (s *Server) startReplication() {
-	s.Config.Mu.Lock()
-	defer s.Config.Mu.Unlock()
+	s.config.Mu.Lock()
+	defer s.config.Mu.Unlock()
 
 	// Connect to master
-	addr := fmt.Sprintf("%v:%v", s.Config.Replication.MasterHost, s.Config.Replication.MasterPort)
+	addr := fmt.Sprintf("%v:%v", s.config.Replication.MasterHost, s.config.Replication.MasterPort)
 	conn, err := net.Dial("tcp", addr)
 
 	if err != nil {
@@ -215,7 +210,7 @@ func (s *Server) startReplication() {
 
 	replconf := resp.NewBulkString("REPLCONF")
 	listiningPort := resp.NewBulkString("listening-port")
-	port := resp.NewBulkString(strconv.Itoa(int(s.Config.Server.Port)))
+	port := resp.NewBulkString(strconv.Itoa(int(s.config.Server.Port)))
 	cmd := resp.NewArray(replconf, listiningPort, port)
 
 	_, err = conn.Write([]byte(cmd.Encode()))
@@ -267,8 +262,8 @@ func (s *Server) startReplication() {
 	// PSYNC <replicationId> <offset>
 
 	psync := resp.NewBulkString("PSYNC")
-	replId := resp.NewBulkString(s.Config.Replication.MasterReplID)
-	offset := resp.NewBulkString(strconv.Itoa(s.Config.Replication.MasterReplOffset))
+	replId := resp.NewBulkString(s.config.Replication.MasterReplID)
+	offset := resp.NewBulkString(strconv.Itoa(s.config.Replication.MasterReplOffset))
 	cmd = resp.NewArray(psync, replId, offset)
 
 	_, err = conn.Write([]byte(cmd.Encode()))
@@ -309,8 +304,8 @@ func (s *Server) startReplication() {
 
 		fmt.Println("Master replId:", replId, "offset:", offset)
 
-		s.Config.Replication.MasterReplID = replId
-		s.Config.Replication.MasterReplOffset = offset
+		s.config.Replication.MasterReplID = replId
+		s.config.Replication.MasterReplOffset = offset
 
 		// Read RDB file from server
 		// TODO: update the server configuration with the RDB file.
