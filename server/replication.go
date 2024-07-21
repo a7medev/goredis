@@ -34,7 +34,6 @@ func (r *Replication) AddReplica(conn Conn) {
 // startReplication connects to the master server and starts the replication process.
 func (s *Server) startReplication() {
 	s.config.Mu.Lock()
-	defer s.config.Mu.Unlock()
 
 	conn, err := connectToMaster(s.config.Replication.MasterHost, s.config.Replication.MasterPort)
 
@@ -70,6 +69,8 @@ func (s *Server) startReplication() {
 	fmt.Println("Sent REPLCONF to master")
 
 	s.syncWithMaster(conn, parser)
+
+	s.config.Mu.Unlock()
 
 	fmt.Println("Finished syncing with master")
 
