@@ -15,13 +15,12 @@ import (
 
 const BufferSize = 4096
 
-type CommandHandler func(ctx *Context)
-
 type Context struct {
 	Conn
 
-	Config *config.Config
-	DB     *storage.Database
+	Config     *config.Config
+	DB         *storage.Database
+	Replcation Replication
 
 	Command string
 	Args    []string
@@ -31,25 +30,43 @@ type Context struct {
 
 func (s *Server) newContext(conn Conn, command string, args []string, fromMaster bool) *Context {
 	return &Context{
-		Conn:    conn,
-		Config:  s.config,
-		DB:      s.db,
-		Command: command,
-		Args:    args,
+		Conn:       conn,
+		Config:     s.config,
+		DB:         s.db,
+		Replcation: s.replication,
+		Command:    command,
+		Args:       args,
+		FromMaster: fromMaster,
 	}
+}
+
+type CommandHandler func(ctx *Context)
+
+type Command struct {
+	Name    string
+	Handler CommandHandler
+	IsWrite bool
+}
+
+func (c *Command) WithIsWrite(isWrite bool) *Command {
+	c.IsWrite = isWrite
+	return c
 }
 
 type Server struct {
 	listener net.Listener
 	config   *config.Config
 	db       *storage.Database
-	commands map[string]CommandHandler
+	commands map[string]*Command
+
+	replication Replication
 }
 
 func NewServer(cfg *config.Config) *Server {
 	return &Server{
-		config:   cfg,
-		commands: make(map[string]CommandHandler),
+		config:      cfg,
+		commands:    make(map[string]*Command),
+		replication: Replication{Replicas: make(map[string]*Replica)},
 	}
 }
 
@@ -88,8 +105,12 @@ func (s *Server) Start() {
 	}
 }
 
-func (s *Server) AddCommand(cmd string, handler CommandHandler) {
-	s.commands[cmd] = handler
+func (s *Server) AddCommand(name string, handler CommandHandler) *Command {
+	cmd := &Command{Name: name, Handler: handler}
+
+	s.commands[name] = cmd
+
+	return cmd
 }
 
 // parseCommand parses the recieved Redis command from the client.
@@ -162,7 +183,13 @@ func (s *Server) handleConn(conn Conn) {
 		handler, ok := s.commands[cmd]
 
 		if ok {
-			handler(ctx)
+			isMaster := s.config.Replication.Role == config.RoleModeMaster
+
+			if isMaster && handler.IsWrite {
+				go s.forwardToReplicas(cmd, args...)
+			}
+
+			handler.Handler(ctx)
 		} else {
 			msg := fmt.Sprintf("ERR unknown command '%v'", cmd)
 			ctx.Reply(resp.NewSimpleError(msg))

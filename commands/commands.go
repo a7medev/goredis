@@ -49,7 +49,10 @@ func Echo(ctx *server.Context) {
 
 func Set(ctx *server.Context) {
 	if len(ctx.Args) < 2 {
-		ctx.Reply(resp.NewSimpleError("ERR wrong number of arguments for 'set' command"))
+		if !ctx.FromMaster {
+			ctx.Reply(resp.NewSimpleError("ERR wrong number of arguments for 'set' command"))
+		}
+
 		return
 	}
 
@@ -69,7 +72,11 @@ func Set(ctx *server.Context) {
 		case "NX":
 			if mode == storage.SetXX {
 				fmt.Println("Error parsing argument: Can't use both NX and XX")
-				ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+
+				if !ctx.FromMaster {
+					ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+				}
+
 				return
 			}
 
@@ -77,7 +84,11 @@ func Set(ctx *server.Context) {
 		case "XX":
 			if mode == storage.SetNX {
 				fmt.Println("Error parsing argument: Can't use both NX and XX")
-				ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+
+				if !ctx.FromMaster {
+					ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+				}
+
 				return
 			}
 
@@ -89,7 +100,11 @@ func Set(ctx *server.Context) {
 		case "EX", "PX", "EXAT", "PXAT":
 			if i+1 >= len(ctx.Args) {
 				fmt.Println("Error parsing argument: Missing expiry time")
-				ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+
+				if !ctx.FromMaster {
+					ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+				}
+
 				return
 			}
 
@@ -101,7 +116,10 @@ func Set(ctx *server.Context) {
 				if err != nil {
 					fmt.Println("Error parsing expiry:", err.Error())
 				}
-				ctx.Reply(resp.NewSimpleError("ERR invalid expire time in 'set' command"))
+
+				if !ctx.FromMaster {
+					ctx.Reply(resp.NewSimpleError("ERR invalid expire time in 'set' command"))
+				}
 				return
 			}
 
@@ -112,7 +130,11 @@ func Set(ctx *server.Context) {
 
 		default:
 			fmt.Println("Error parsing argument: Unknown argument", arg)
-			ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+
+			if !ctx.FromMaster {
+				ctx.Reply(resp.NewSimpleError("ERR syntax error"))
+			}
+
 			return
 		}
 	}
@@ -244,4 +266,6 @@ func PSync(ctx *server.Context) {
 	}
 
 	ctx.Reply(rdb.NewRDB(content))
+
+	ctx.Replcation.AddReplica(ctx.Conn)
 }

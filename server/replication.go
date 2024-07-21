@@ -6,9 +6,30 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/a7medev/goredis/resp"
 )
+
+type Replica struct {
+	Conn
+	Offset int
+	mu     sync.Mutex
+}
+
+func (r *Replica) SetOffset(offset int) {
+	r.mu.Lock()
+	r.Offset = offset
+	r.mu.Unlock()
+}
+
+type Replication struct {
+	Replicas map[string]*Replica
+}
+
+func (r *Replication) AddReplica(conn Conn) {
+	r.Replicas[conn.Addr()] = &Replica{Conn: conn}
+}
 
 // startReplication connects to the master server and starts the replication process.
 func (s *Server) startReplication() {
@@ -243,12 +264,37 @@ func (s *Server) handleMasterCommands(conn Conn) {
 			return
 		}
 
+		s.config.Mu.Lock()
+		// TODO: refactor inefficient re-encoding on the command to get the length.
+		s.config.Replication.MasterReplOffset += len(createCommand(cmd, args...).Encode())
+		s.config.Mu.Unlock()
+
 		handler, ok := s.commands[cmd]
 
 		if ok {
-			handler(ctx)
+			handler.Handler(ctx)
 		} else {
 			fmt.Printf("ERR unknown command '%v'\n", cmd)
 		}
+	}
+}
+
+func (s *Server) forwardToReplicas(cmd string, args ...string) {
+	// TODO: Refactor to buffer commands and use ACKs to ensure all replicas received the command.
+	// TODO: The client has already encoded the command while sending it to our server, so no need to
+	// decode it and then encode it once again as we are doing here, we should refactor the parser to return
+	// the original message sent by the client for logic like forwarding to be more efficient.
+	msg := createCommand(cmd, args...)
+
+	s.config.Mu.Lock()
+	s.config.Replication.MasterReplOffset += len(msg.Encode())
+	s.config.Mu.Unlock()
+
+	for _, replica := range s.replication.Replicas {
+		// NOTE: calling Reply with an Encodable each time is probably inefficient as it will encode the message each time.
+		// as the message doesn't change.
+
+		// Refactor to have ReplyString for example along with the default Reply which takes in an Encodable.
+		replica.Reply(msg)
 	}
 }

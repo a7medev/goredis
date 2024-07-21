@@ -47,9 +47,9 @@ func main() {
 
 	s.AddCommand("PING", commands.Ping)
 	s.AddCommand("ECHO", commands.Echo)
-	s.AddCommand("SET", commands.Set)
+	s.AddCommand("SET", commands.Set).WithIsWrite(true)
 	s.AddCommand("GET", commands.Get)
-	s.AddCommand("DEL", commands.Del)
+	s.AddCommand("DEL", commands.Del).WithIsWrite(true)
 	s.AddCommand("INFO", commands.Info)
 	s.AddCommand("REPLCONF", commands.ReplConf)
 	s.AddCommand("PSYNC", commands.PSync)
